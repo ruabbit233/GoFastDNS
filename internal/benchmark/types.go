@@ -1,15 +1,19 @@
 package benchmark
 
 import (
+	"GoFastDNS/internal/dns"
 	"GoFastDNS/internal/ping"
 	"time"
 )
 
 type DomainResult struct {
 	Domain         string
-	Answers        []string
+	Answers        []dns.Answer
+	ResponseCodes  []dns.ResponseCode
 	ResponseTime   time.Duration
 	Error          error
+	QueryErrors    []string
+	NoAnswer       bool
 	RetryCount     int
 	DnsPingResults ping.DNSPingResult // 新增字段
 }

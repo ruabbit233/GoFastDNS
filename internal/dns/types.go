@@ -12,6 +12,33 @@ const (
 	ProtocolTLS Protocol = "TLS"
 )
 
+type RecordType string
+
+const (
+	RecordTypeA    RecordType = "A"
+	RecordTypeAAAA RecordType = "AAAA"
+)
+
+type ResolveOptions struct {
+	RecordTypes []RecordType
+}
+
+type Answer struct {
+	QueryType string `json:"query_type,omitempty"`
+	Name      string `json:"name"`
+	Type      string `json:"type"`
+	Value     string `json:"value"`
+	TTL       uint32 `json:"ttl"`
+	Family    string `json:"family,omitempty"`
+	Priority  int    `json:"priority,omitempty"`
+}
+
+type ResponseCode struct {
+	RecordType string `json:"record_type"`
+	Code       int    `json:"code"`
+	Name       string `json:"name"`
+}
+
 type DNSResult struct {
 	Server          string
 	Domain          string
@@ -19,11 +46,14 @@ type DNSResult struct {
 	ResponseTime    time.Duration
 	ResolutionError error
 	RetryCount      int
-	Answers         []string    // 新增：保存DNS应答记录
+	Answers         []Answer
+	ResponseCodes   []ResponseCode
+	QueryErrors     []string
+	NoAnswer        bool
 }
 
 type Resolver interface {
-	Resolve(domain string, timeout time.Duration) DNSResult
+	Resolve(domain string, timeout time.Duration, options ResolveOptions) DNSResult
 }
 
 type UDPResolver struct {

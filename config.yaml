@@ -1,14 +1,18 @@
 mode: resolve-ping # 可选: resolve-ping / dns-ping
 attempts: 2 # 最大错误重试次数，会保留最后一次成功的结果
 timeout: 1s # DNS 查询超时时间
+dns:
+  record_types:
+    - A # 可选: A / AAAA；默认只查 A 记录，保持旧行为
 ping:
   count: 3
   interval: 100ms
   timeout: 2s
   privileged: false # 默认使用非特权 ping，避免普通用户缺少 raw ICMP 权限
   ip_selection: all # 可选: all / first；first 用于模拟只使用首个解析 IP
+  ip_family: ipv4 # 可选: ipv4 / ipv6 / dual；默认只 ping IPv4
 output:
-  format: html # 可选: excel / html
+  format: html # 可选: excel / html / json
   path: .
 dns_servers:
   - "udp://211.64.142.4"

@@ -3,3 +3,5 @@
 *.html
 *.exe
 .tmp-gocache/
+*.bin
+*.mmdb

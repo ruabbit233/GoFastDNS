@@ -36,6 +36,7 @@ type domainHTMLRow struct {
 	ResponseTime string
 	Retries      int
 	Error        string
+	NoAnswer     bool
 	Answers      []string
 	PingTargets  []string
 	AvgPing      string
@@ -135,7 +136,8 @@ func buildDomainHTMLRows(results []DomainResult) []domainHTMLRow {
 			Domain:       result.Domain,
 			ResponseTime: formatDuration(result.ResponseTime),
 			Retries:      result.RetryCount,
-			Answers:      result.Answers,
+			NoAnswer:     result.NoAnswer,
+			Answers:      answerLabels(result.Answers),
 			PingTargets:  pingTargets(result.DnsPingResults.PingResults),
 			AvgPing:      formatDuration(result.DnsPingResults.AvgRTT),
 			PingErrors:   pingErrorMessages(result.DnsPingResults.PingResults),
@@ -588,10 +590,11 @@ tr:last-child td { border-bottom: 0; }
                 <td class="num">{{.AvgPing}}</td>
                 <td>
                   {{if .Error}}<div class="error">{{.Error}}</div>{{end}}
+                  {{if .NoAnswer}}<div class="status-warn">无可 Ping 的 A/AAAA 记录</div>{{end}}
                   {{if hasStringValues .PingErrors}}
                   {{range .PingErrors}}<div class="error">{{.}}</div>{{end}}
                   {{end}}
-                  {{if and (not .Error) (not (hasStringValues .PingErrors))}}<span class="status-ok">正常</span>{{end}}
+                  {{if and (not .Error) (not .NoAnswer) (not (hasStringValues .PingErrors))}}<span class="status-ok">正常</span>{{end}}
                 </td>
               </tr>
               {{end}}

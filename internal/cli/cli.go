@@ -14,20 +14,22 @@ import (
 )
 
 type flagOptions struct {
-	rawFlags   []string
-	configPath string
-	mode       string
-	dnsServers string
-	domains    string
-	attempts   int
-	timeout    time.Duration
-	pingCount  int
-	pingIntv   time.Duration
-	pingTime   time.Duration
-	pingPriv   bool
-	ipSelect   string
-	outputPath string
-	outputFmt  string
+	rawFlags    []string
+	configPath  string
+	mode        string
+	dnsServers  string
+	domains     string
+	recordTypes string
+	attempts    int
+	timeout     time.Duration
+	pingCount   int
+	pingIntv    time.Duration
+	pingTime    time.Duration
+	pingPriv    bool
+	ipSelect    string
+	ipFamily    string
+	outputPath  string
+	outputFmt   string
 }
 
 func Run(args []string) int {
@@ -92,6 +94,7 @@ func parseFlags(args []string, output io.Writer) (flagOptions, error) {
 	fs.StringVar(&opts.mode, "mode", "", "运行模式: resolve-ping 或 dns-ping")
 	fs.StringVar(&opts.dnsServers, "dns", "", "DNS 服务器列表，逗号分隔")
 	fs.StringVar(&opts.domains, "domains", "", "域名列表，逗号分隔")
+	fs.StringVar(&opts.recordTypes, "record-types", "", "DNS 记录类型列表，逗号分隔: A 或 AAAA")
 	fs.IntVar(&opts.attempts, "attempts", -1, "DNS 查询失败后的最大重试次数")
 	fs.DurationVar(&opts.timeout, "timeout", 0, "DNS 查询超时时间，如 1s")
 	fs.IntVar(&opts.pingCount, "ping-count", -1, "每个 IP 的 ping 次数")
@@ -99,8 +102,9 @@ func parseFlags(args []string, output io.Writer) (flagOptions, error) {
 	fs.DurationVar(&opts.pingTime, "ping-timeout", 0, "ping 超时时间，如 2s")
 	fs.BoolVar(&opts.pingPriv, "ping-privileged", false, "使用特权 raw ICMP ping")
 	fs.StringVar(&opts.ipSelect, "ip-selection", "", "解析 IP 的 ping 目标选择策略: all 或 first")
+	fs.StringVar(&opts.ipFamily, "ip-family", "", "Ping IP family: ipv4、ipv6 或 dual")
 	fs.StringVar(&opts.outputPath, "output", "", "输出目录或文件路径")
-	fs.StringVar(&opts.outputFmt, "output-format", "", "输出格式，目前支持 excel 或 html")
+	fs.StringVar(&opts.outputFmt, "output-format", "", "输出格式，目前支持 excel、html 或 json")
 
 	err := fs.Parse(args)
 	opts.rawFlags = args
@@ -116,6 +120,9 @@ func applyFlagOverrides(cfg *config.Config, opts flagOptions) {
 	}
 	if opts.domains != "" {
 		cfg.Domains = splitList(opts.domains)
+	}
+	if opts.recordTypes != "" {
+		cfg.DNS.RecordTypes = splitList(opts.recordTypes)
 	}
 	if opts.attempts >= 0 {
 		cfg.Attempts = opts.attempts
@@ -137,6 +144,9 @@ func applyFlagOverrides(cfg *config.Config, opts flagOptions) {
 	}
 	if opts.ipSelect != "" {
 		cfg.Ping.IPSelection = opts.ipSelect
+	}
+	if opts.ipFamily != "" {
+		cfg.Ping.IPFamily = opts.ipFamily
 	}
 	if opts.outputPath != "" {
 		cfg.Output.Path = opts.outputPath

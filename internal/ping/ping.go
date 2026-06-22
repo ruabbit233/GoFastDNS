@@ -1,6 +1,7 @@
 package ping
 
 import (
+	"net"
 	"strings"
 	"time"
 
@@ -64,11 +65,12 @@ func PingDNSResultWithOptions(result dns.DNSResult, options Options) DNSPingResu
 		}
 	}
 
-	pingResults := make([]PingResult, 0, len(result.Answers))
+	targets := SelectTargets(result.Answers, options.IPSelection, options.IPFamily)
+	pingResults := make([]PingResult, 0, len(targets))
 	var totalRTT time.Duration
 	successfulPings := 0
 
-	for _, ip := range selectPingTargets(result.Answers, options.IPSelection) {
+	for _, ip := range targets {
 		pingResult := PingIPWithOptions(ip, options)
 		pingResults = append(pingResults, pingResult)
 
@@ -111,15 +113,46 @@ func applyDefaults(options Options) Options {
 		options.IPSelection = "all"
 	}
 	options.IPSelection = strings.ToLower(options.IPSelection)
+	if options.IPFamily == "" {
+		options.IPFamily = "ipv4"
+	}
+	options.IPFamily = strings.ToLower(options.IPFamily)
 	return options
 }
 
-func selectPingTargets(answers []string, selection string) []string {
-	if len(answers) == 0 {
-		return nil
+func SelectTargets(answers []dns.Answer, selection, family string) []string {
+	selection = strings.ToLower(selection)
+	family = strings.ToLower(family)
+
+	targets := make([]string, 0, len(answers))
+	for _, answer := range answers {
+		if answer.Type != "A" && answer.Type != "AAAA" {
+			continue
+		}
+		if answer.Value == "" {
+			continue
+		}
+
+		ip := net.ParseIP(answer.Value)
+		if ip == nil {
+			continue
+		}
+		answerFamily := "ipv6"
+		if ip.To4() != nil {
+			answerFamily = "ipv4"
+		}
+		if family != "dual" && family != "" && family != answerFamily {
+			continue
+		}
+
+		targets = append(targets, answer.Value)
 	}
+
 	if strings.ToLower(selection) == "first" {
-		return answers[:1]
+		if len(targets) == 0 {
+			return nil
+		}
+		return targets[:1]
 	}
-	return answers
+	return targets
 }

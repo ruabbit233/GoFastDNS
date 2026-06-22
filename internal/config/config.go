@@ -21,10 +21,15 @@ type Config struct {
 	Mode       Mode          `yaml:"mode"`
 	DNSServers []string      `yaml:"dns_servers"`
 	Domains    []string      `yaml:"domains"`
+	DNS        DNSConfig     `yaml:"dns"`
 	Attempts   int           `yaml:"attempts"` // 最大重试次数
 	Timeout    time.Duration `yaml:"timeout"`  // DNS 查询超时时间
 	Ping       PingConfig    `yaml:"ping"`
 	Output     OutputConfig  `yaml:"output"`
+}
+
+type DNSConfig struct {
+	RecordTypes []string `yaml:"record_types"`
 }
 
 type PingConfig struct {
@@ -33,6 +38,7 @@ type PingConfig struct {
 	Timeout     time.Duration `yaml:"timeout"`
 	Privileged  bool          `yaml:"privileged"`
 	IPSelection string        `yaml:"ip_selection"`
+	IPFamily    string        `yaml:"ip_family"`
 }
 
 type OutputConfig struct {
@@ -45,11 +51,15 @@ func DefaultConfig() Config {
 		Mode:     ModeResolvePing,
 		Attempts: 1,
 		Timeout:  2 * time.Second,
+		DNS: DNSConfig{
+			RecordTypes: []string{"A"},
+		},
 		Ping: PingConfig{
 			Count:       3,
 			Interval:    100 * time.Millisecond,
 			Timeout:     2 * time.Second,
 			IPSelection: "all",
+			IPFamily:    "ipv4",
 		},
 		Output: OutputConfig{
 			Format: "excel",
@@ -93,6 +103,10 @@ func ApplyDefaults(config *Config) {
 	if config.Timeout <= 0 {
 		config.Timeout = defaults.Timeout
 	}
+	if len(config.DNS.RecordTypes) == 0 {
+		config.DNS.RecordTypes = append([]string(nil), defaults.DNS.RecordTypes...)
+	}
+	config.DNS.RecordTypes = normalizeList(config.DNS.RecordTypes, strings.ToUpper)
 	if config.Ping.Count <= 0 {
 		config.Ping.Count = defaults.Ping.Count
 	}
@@ -106,6 +120,10 @@ func ApplyDefaults(config *Config) {
 		config.Ping.IPSelection = defaults.Ping.IPSelection
 	}
 	config.Ping.IPSelection = strings.ToLower(config.Ping.IPSelection)
+	if config.Ping.IPFamily == "" {
+		config.Ping.IPFamily = defaults.Ping.IPFamily
+	}
+	config.Ping.IPFamily = strings.ToLower(config.Ping.IPFamily)
 	if config.Output.Format == "" {
 		config.Output.Format = defaults.Output.Format
 	}
@@ -133,6 +151,16 @@ func Validate(config Config) error {
 	if config.Timeout <= 0 {
 		return errors.New("timeout must be greater than 0")
 	}
+	if len(config.DNS.RecordTypes) == 0 {
+		return errors.New("dns.record_types is required")
+	}
+	for _, recordType := range config.DNS.RecordTypes {
+		switch strings.ToUpper(recordType) {
+		case "A", "AAAA":
+		default:
+			return fmt.Errorf("unsupported dns.record_types value %q", recordType)
+		}
+	}
 	if config.Ping.Count <= 0 {
 		return errors.New("ping.count must be greater than 0")
 	}
@@ -147,13 +175,32 @@ func Validate(config Config) error {
 	default:
 		return fmt.Errorf("unsupported ping.ip_selection %q", config.Ping.IPSelection)
 	}
+	switch config.Ping.IPFamily {
+	case "ipv4", "ipv6", "dual":
+	default:
+		return fmt.Errorf("unsupported ping.ip_family %q", config.Ping.IPFamily)
+	}
 
 	format := strings.ToLower(config.Output.Format)
 	switch format {
-	case "excel", "html":
+	case "excel", "html", "json":
 	default:
 		return fmt.Errorf("unsupported output format %q", config.Output.Format)
 	}
 
 	return nil
+}
+
+func normalizeList(values []string, transform func(string) string) []string {
+	normalized := make([]string, 0, len(values))
+	seen := make(map[string]bool, len(values))
+	for _, value := range values {
+		value = transform(strings.TrimSpace(value))
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		normalized = append(normalized, value)
+	}
+	return normalized
 }

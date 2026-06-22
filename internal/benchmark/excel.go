@@ -63,12 +63,19 @@ func SaveResultsToExcel(servers []string, results []BenchmarkResult, outputPath 
 				float64(domain.ResponseTime.Milliseconds()))
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+2), rowIdx+6),
 				domain.RetryCount)
+			errorMessages := make([]string, 0)
 			if domain.Error != nil {
+				errorMessages = append(errorMessages, domain.Error.Error())
+			}
+			if domain.NoAnswer {
+				errorMessages = append(errorMessages, "无可 Ping 的 A/AAAA 记录")
+			}
+			if len(errorMessages) > 0 {
 				f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+3), rowIdx+6),
-					domain.Error.Error())
+					strings.Join(errorMessages, "\n"))
 			}
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+4), rowIdx+6),
-				domain.Answers)
+				strings.Join(answerLabels(domain.Answers), "\n"))
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+5), rowIdx+6),
 				pingTargets(domain.DnsPingResults.PingResults))
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+6), rowIdx+6),
@@ -110,6 +117,9 @@ func pingErrorMessages(results []ping.PingResult) []string {
 }
 
 func pingTargets(results []ping.PingResult) []string {
+	if results == nil {
+		return []string{}
+	}
 	targets := make([]string, 0, len(results))
 	for _, result := range results {
 		targets = append(targets, result.IP)

@@ -1,7 +1,9 @@
 package benchmark
 
 import (
+	"GoFastDNS/internal/dns"
 	"GoFastDNS/internal/ping"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -99,8 +101,10 @@ func TestSaveResultsToHTML(t *testing.T) {
 			AvgPingRTT:      34 * time.Millisecond,
 			DomainResults: []DomainResult{
 				{
-					Domain:       "example.com",
-					Answers:      []string{"93.184.216.34"},
+					Domain: "example.com",
+					Answers: []dns.Answer{
+						{Name: "example.com", Type: "A", Value: "93.184.216.34", TTL: 300, Family: "ipv4"},
+					},
 					ResponseTime: 12 * time.Millisecond,
 					DnsPingResults: ping.DNSPingResult{
 						AvgRTT: 34 * time.Millisecond,
@@ -138,6 +142,9 @@ func TestSaveResultsToHTML(t *testing.T) {
 	}
 	if !strings.Contains(html, "example.com") {
 		t.Fatal("expected domain details")
+	}
+	if !strings.Contains(html, "A 93.184.216.34 TTL=300") {
+		t.Fatal("expected structured DNS answer label")
 	}
 	if strings.Contains(html, "<script>alert(1)</script>") {
 		t.Fatal("expected server value to be HTML-escaped")
@@ -180,5 +187,115 @@ func TestSaveDNSPingResultsToHTMLUsesExplicitFilePath(t *testing.T) {
 	}
 	if !strings.Contains(html, "25.0%") {
 		t.Fatal("expected packet loss percentage")
+	}
+}
+
+func TestSaveResolvePingResultsToJSON(t *testing.T) {
+	results := []BenchmarkResult{
+		{
+			Server:          "<script>",
+			AvgResponseTime: 12*time.Millisecond + 500*time.Microsecond,
+			SuccessRate:     1,
+			AvgPingRTT:      34 * time.Millisecond,
+			DomainResults: []DomainResult{
+				{
+					Domain:       "example.com",
+					ResponseTime: 12*time.Millisecond + 500*time.Microsecond,
+					Answers: []dns.Answer{
+						{Name: "example.com", Type: "CNAME", Value: "edge.example.com", TTL: 60},
+						{Name: "edge.example.com", Type: "A", Value: "93.184.216.34", TTL: 300, Family: "ipv4"},
+					},
+					ResponseCodes: []dns.ResponseCode{{RecordType: "A", Code: 0, Name: "NOERROR"}},
+					DnsPingResults: ping.DNSPingResult{
+						AvgRTT: 34 * time.Millisecond,
+						PingResults: []ping.PingResult{
+							{IP: "93.184.216.34", RTT: 34 * time.Millisecond, PacketsSent: 3},
+						},
+					},
+				},
+				{
+					Domain:      "failed.example",
+					Error:       errors.New("escaped <error>"),
+					QueryErrors: []string{"escaped <error>"},
+				},
+				{
+					Domain:   "cname-only.example",
+					NoAnswer: true,
+					Answers: []dns.Answer{
+						{Name: "cname-only.example", Type: "CNAME", Value: "edge.example.com", TTL: 30},
+					},
+				},
+			},
+		},
+	}
+
+	filename, err := SaveResolvePingResultsToJSON(results, t.TempDir())
+	if err != nil {
+		t.Fatalf("SaveResolvePingResultsToJSON returned error: %v", err)
+	}
+	if filepath.Ext(filename) != ".json" {
+		t.Fatalf("expected .json output, got %q", filename)
+	}
+
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatalf("read json output: %v", err)
+	}
+	if !json.Valid(content) {
+		t.Fatalf("expected valid JSON, got %s", content)
+	}
+	jsonText := string(content)
+	for _, want := range []string{
+		`"mode": "resolve-ping"`,
+		`"avg_response_time_ms": 12.5`,
+		`"type": "CNAME"`,
+		`"ping_targets"`,
+		`"no_answer": true`,
+		`"escaped \u003cerror\u003e"`,
+		`"answers": []`,
+	} {
+		if !strings.Contains(jsonText, want) {
+			t.Fatalf("expected JSON to contain %s\n%s", want, jsonText)
+		}
+	}
+}
+
+func TestSaveDNSPingResultsToJSONUsesExplicitFilePath(t *testing.T) {
+	outputPath := filepath.Join(t.TempDir(), "dns-report.json")
+	results := []DNSPingBenchmarkResult{
+		{
+			Server:      "udp://1.1.1.1",
+			Target:      "1.1.1.1",
+			RTT:         10 * time.Millisecond,
+			PacketLoss:  25,
+			PacketsSent: 4,
+		},
+		{
+			Server: "bad",
+			Error:  errors.New("bad <target>"),
+		},
+	}
+
+	filename, err := SaveDNSPingResultsToJSON(results, outputPath)
+	if err != nil {
+		t.Fatalf("SaveDNSPingResultsToJSON returned error: %v", err)
+	}
+	if filename != outputPath {
+		t.Fatalf("expected explicit output path %q, got %q", outputPath, filename)
+	}
+
+	content, err := os.ReadFile(filename)
+	if err != nil {
+		t.Fatalf("read json output: %v", err)
+	}
+	jsonText := string(content)
+	if !strings.Contains(jsonText, `"mode": "dns-ping"`) {
+		t.Fatal("expected dns-ping mode")
+	}
+	if !strings.Contains(jsonText, `"successful_count": 1`) {
+		t.Fatal("expected successful count summary")
+	}
+	if !strings.Contains(jsonText, `bad \u003ctarget\u003e`) {
+		t.Fatal("expected JSON escaped error text")
 	}
 }

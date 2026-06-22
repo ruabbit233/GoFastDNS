@@ -26,6 +26,8 @@ func Run(cfg config.Config, logger *log.Logger) (string, error) {
 			return SaveResultsToExcel(cfg.DNSServers, results, cfg.Output.Path)
 		case "html":
 			return SaveResultsToHTML(results, cfg.Output.Path)
+		case "json":
+			return SaveResolvePingResultsToJSON(results, cfg.Output.Path)
 		default:
 			return "", fmt.Errorf("unsupported output format %q", cfg.Output.Format)
 		}
@@ -37,6 +39,8 @@ func Run(cfg config.Config, logger *log.Logger) (string, error) {
 			return SaveDNSPingResultsToExcel(results, cfg.Output.Path)
 		case "html":
 			return SaveDNSPingResultsToHTML(results, cfg.Output.Path)
+		case "json":
+			return SaveDNSPingResultsToJSON(results, cfg.Output.Path)
 		default:
 			return "", fmt.Errorf("unsupported output format %q", cfg.Output.Format)
 		}
@@ -64,6 +68,10 @@ func RunResolvePing(cfg config.Config, logger *log.Logger) []BenchmarkResult {
 		Timeout:     cfg.Ping.Timeout,
 		Privileged:  cfg.Ping.Privileged,
 		IPSelection: cfg.Ping.IPSelection,
+		IPFamily:    cfg.Ping.IPFamily,
+	}
+	resolveOptions := dns.ResolveOptions{
+		RecordTypes: dnsRecordTypes(cfg.DNS.RecordTypes),
 	}
 
 	for _, server := range cfg.DNSServers {
@@ -80,7 +88,7 @@ func RunResolvePing(cfg config.Config, logger *log.Logger) []BenchmarkResult {
 
 			for _, domain := range cfg.Domains {
 				// DNS 解析
-				result := dns.ResolveDNS(s, domain, cfg.Attempts, cfg.Timeout)
+				result := dns.ResolveDNSWithOptions(s, domain, cfg.Attempts, cfg.Timeout, resolveOptions)
 
 				// 执行 Ping 测试
 				dnsPingResult := ping.PingDNSResultWithOptions(result, pingOptions)
@@ -88,8 +96,11 @@ func RunResolvePing(cfg config.Config, logger *log.Logger) []BenchmarkResult {
 				domainResult := DomainResult{
 					Domain:         domain,
 					Answers:        result.Answers,
+					ResponseCodes:  result.ResponseCodes,
 					ResponseTime:   result.ResponseTime,
 					Error:          result.ResolutionError,
+					QueryErrors:    result.QueryErrors,
+					NoAnswer:       result.NoAnswer,
 					RetryCount:     result.RetryCount,
 					DnsPingResults: dnsPingResult, // 添加 Ping 结果
 				}
@@ -159,6 +170,7 @@ func RunDNSPing(cfg config.Config, logger *log.Logger) []DNSPingBenchmarkResult 
 		Timeout:     cfg.Ping.Timeout,
 		Privileged:  cfg.Ping.Privileged,
 		IPSelection: cfg.Ping.IPSelection,
+		IPFamily:    cfg.Ping.IPFamily,
 	}
 
 	for _, server := range cfg.DNSServers {
@@ -265,4 +277,16 @@ func pingTargetFromServer(server string) (string, error) {
 	}
 
 	return "", err
+}
+
+func dnsRecordTypes(recordTypes []string) []dns.RecordType {
+	values := make([]dns.RecordType, 0, len(recordTypes))
+	for _, recordType := range recordTypes {
+		recordType = strings.ToUpper(strings.TrimSpace(recordType))
+		if recordType == "" {
+			continue
+		}
+		values = append(values, dns.RecordType(recordType))
+	}
+	return values
 }

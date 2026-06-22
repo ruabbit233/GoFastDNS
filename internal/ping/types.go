@@ -8,6 +8,7 @@ type Options struct {
 	Timeout     time.Duration
 	Privileged  bool
 	IPSelection string
+	IPFamily    string
 }
 
 type PingResult struct {

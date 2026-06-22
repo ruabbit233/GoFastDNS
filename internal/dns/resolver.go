@@ -42,94 +42,173 @@ func NewResolver(address string) (Resolver, error) {
 	return &UDPResolver{server: address}, nil
 }
 
-func (r *UDPResolver) Resolve(domain string, timeout time.Duration) DNSResult {
+func (r *UDPResolver) Resolve(domain string, timeout time.Duration, options ResolveOptions) DNSResult {
 	c := dns.Client{
 		Timeout: timeout,
 	}
-
-	m := dns.Msg{}
-	m.SetQuestion(dns.Fqdn(domain), dns.TypeA)
-
-	resp, duration, err := c.Exchange(&m, net.JoinHostPort(r.server, "53"))
-	
-	result := DNSResult{
-		Server:          r.server,
-		Domain:          domain,
-		Protocol:        ProtocolUDP,
-		ResponseTime:    duration,
-		ResolutionError: err,
-		Answers:         make([]string, 0),
-	}
-
-	if err == nil && resp != nil {
-		for _, ans := range resp.Answer {
-			if a, ok := ans.(*dns.A); ok {
-				result.Answers = append(result.Answers, a.A.String())
-			}
-		}
-	}
-
-	return result
+	return exchangeQueries(&c, r.server, "53", ProtocolUDP, domain, options)
 }
 
-func (r *TCPResolver) Resolve(domain string, timeout time.Duration) DNSResult {
+func (r *TCPResolver) Resolve(domain string, timeout time.Duration, options ResolveOptions) DNSResult {
 	c := dns.Client{
 		Net:     "tcp",
 		Timeout: timeout,
 	}
+	return exchangeQueries(&c, r.server, "53", ProtocolTCP, domain, options)
+}
 
-	m := dns.Msg{}
-	m.SetQuestion(dns.Fqdn(domain), dns.TypeA)
+func (r *TLSResolver) Resolve(domain string, timeout time.Duration, options ResolveOptions) DNSResult {
+	c := dns.Client{
+		Net:     "tcp-tls",
+		Timeout: timeout,
+	}
+	return exchangeQueries(&c, r.server, "853", ProtocolTLS, domain, options)
+}
 
-	resp, duration, err := c.Exchange(&m, net.JoinHostPort(r.server, "53"))
-	
+func exchangeQueries(c *dns.Client, server, defaultPort string, protocol Protocol, domain string, options ResolveOptions) DNSResult {
 	result := DNSResult{
-		Server:          r.server,
-		Domain:          domain,
-		Protocol:        ProtocolTCP,
-		ResponseTime:    duration,
-		ResolutionError: err,
-		Answers:         make([]string, 0),
+		Server:   server,
+		Domain:   domain,
+		Protocol: protocol,
+		Answers:  make([]Answer, 0),
 	}
 
-	if err == nil && resp != nil {
-		for _, ans := range resp.Answer {
-			if a, ok := ans.(*dns.A); ok {
-				result.Answers = append(result.Answers, a.A.String())
-			}
+	address := serverAddress(server, defaultPort)
+	recordTypes := normalizeRecordTypes(options.RecordTypes)
+	successfulQueries := 0
+	var lastErr error
+	for _, recordType := range recordTypes {
+		queryType, err := dnsQueryType(recordType)
+		if err != nil {
+			result.ResolutionError = err
+			return result
 		}
+
+		msg := dns.Msg{}
+		msg.SetQuestion(dns.Fqdn(domain), queryType)
+
+		resp, duration, err := c.Exchange(&msg, address)
+		result.ResponseTime += duration
+		if err != nil {
+			result.QueryErrors = append(result.QueryErrors, fmt.Sprintf("%s: %v", recordType, err))
+			lastErr = err
+			continue
+		}
+		if resp == nil {
+			err := fmt.Errorf("%s: empty DNS response", recordType)
+			result.QueryErrors = append(result.QueryErrors, err.Error())
+			lastErr = err
+			continue
+		}
+
+		result.ResponseCodes = append(result.ResponseCodes, ResponseCode{
+			RecordType: string(recordType),
+			Code:       resp.Rcode,
+			Name:       dns.RcodeToString[resp.Rcode],
+		})
+		if resp.Rcode != dns.RcodeSuccess {
+			err := fmt.Errorf("%s: DNS response code %s", recordType, dns.RcodeToString[resp.Rcode])
+			result.QueryErrors = append(result.QueryErrors, err.Error())
+			lastErr = err
+			continue
+		}
+
+		successfulQueries++
+		result.Answers = append(result.Answers, ParseAnswers(resp.Answer, recordType)...)
+	}
+
+	if len(recordTypes) > 0 {
+		result.ResponseTime /= time.Duration(len(recordTypes))
+	}
+	if successfulQueries == 0 && lastErr != nil {
+		result.ResolutionError = lastErr
+	}
+	if successfulQueries > 0 {
+		result.NoAnswer = !hasAddressAnswer(result.Answers)
 	}
 
 	return result
 }
 
-func (r *TLSResolver) Resolve(domain string, timeout time.Duration) DNSResult {
-	c := dns.Client{
-		Net:     "tcp-tls",
-		Timeout: timeout,
+func serverAddress(server, defaultPort string) string {
+	if _, _, err := net.SplitHostPort(server); err == nil {
+		return server
+	}
+	return net.JoinHostPort(strings.Trim(server, "[]"), defaultPort)
+}
+
+func normalizeRecordTypes(recordTypes []RecordType) []RecordType {
+	if len(recordTypes) == 0 {
+		return []RecordType{RecordTypeA}
 	}
 
-	m := dns.Msg{}
-	m.SetQuestion(dns.Fqdn(domain), dns.TypeA)
-
-	resp, duration, err := c.Exchange(&m, net.JoinHostPort(r.server, "853"))
-	
-	result := DNSResult{
-		Server:          r.server,
-		Domain:          domain,
-		Protocol:        ProtocolTLS,
-		ResponseTime:    duration,
-		ResolutionError: err,
-		Answers:         make([]string, 0),
+	normalized := make([]RecordType, 0, len(recordTypes))
+	seen := make(map[RecordType]bool, len(recordTypes))
+	for _, recordType := range recordTypes {
+		recordType = RecordType(strings.ToUpper(strings.TrimSpace(string(recordType))))
+		if recordType == "" || seen[recordType] {
+			continue
+		}
+		seen[recordType] = true
+		normalized = append(normalized, recordType)
 	}
+	if len(normalized) == 0 {
+		return []RecordType{RecordTypeA}
+	}
+	return normalized
+}
 
-	if err == nil && resp != nil {
-		for _, ans := range resp.Answer {
-			if a, ok := ans.(*dns.A); ok {
-				result.Answers = append(result.Answers, a.A.String())
+func dnsQueryType(recordType RecordType) (uint16, error) {
+	switch recordType {
+	case RecordTypeA:
+		return dns.TypeA, nil
+	case RecordTypeAAAA:
+		return dns.TypeAAAA, nil
+	default:
+		return 0, fmt.Errorf("unsupported DNS record type %q", recordType)
+	}
+}
+
+func ParseAnswers(records []dns.RR, queryType RecordType) []Answer {
+	answers := make([]Answer, 0, len(records))
+	for _, record := range records {
+		header := record.Header()
+		answer := Answer{
+			QueryType: string(queryType),
+			Name:      strings.TrimSuffix(header.Name, "."),
+			Type:      dns.TypeToString[header.Rrtype],
+			TTL:       header.Ttl,
+		}
+
+		switch value := record.(type) {
+		case *dns.A:
+			answer.Value = value.A.String()
+			answer.Family = "ipv4"
+		case *dns.AAAA:
+			answer.Value = value.AAAA.String()
+			answer.Family = "ipv6"
+		case *dns.CNAME:
+			answer.Value = strings.TrimSuffix(value.Target, ".")
+		case *dns.MX:
+			answer.Value = strings.TrimSuffix(value.Mx, ".")
+			answer.Priority = int(value.Preference)
+		default:
+			answer.Value = record.String()
+		}
+
+		answers = append(answers, answer)
+	}
+	return answers
+}
+
+func hasAddressAnswer(answers []Answer) bool {
+	for _, answer := range answers {
+		switch answer.Type {
+		case "A", "AAAA":
+			if answer.Value != "" {
+				return true
 			}
 		}
 	}
-
-	return result
+	return false
 }
