@@ -3,6 +3,7 @@ package benchmark
 import (
 	"GoFastDNS/internal/config"
 	"GoFastDNS/internal/dns"
+	"GoFastDNS/internal/geoip"
 	"GoFastDNS/internal/ping"
 	"context"
 	"encoding/json"
@@ -16,6 +17,29 @@ import (
 	"testing"
 	"time"
 )
+
+type fakeGeoLookup struct {
+	calls atomic.Int64
+}
+
+func (f *fakeGeoLookup) Lookup(ip string) (*geoip.Info, error) {
+	f.calls.Add(1)
+	switch ip {
+	case "192.0.2.1":
+		return &geoip.Info{
+			IP:          ip,
+			Provider:    "fake",
+			CountryName: "Testland",
+			Region:      "Test Region",
+			City:        "Test City",
+			ASN:         "64500",
+			ASName:      "Example AS",
+			ISP:         "Example ISP",
+		}, nil
+	default:
+		return &geoip.Info{IP: ip, Provider: "fake"}, nil
+	}
+}
 
 func logDiscard() *log.Logger {
 	return log.New(io.Discard, "", 0)
@@ -240,6 +264,73 @@ func TestRunResolvePingHonorsConcurrencyLimits(t *testing.T) {
 	}
 	if got := maxPings.Load(); got > 1 {
 		t.Fatalf("expected ping concurrency <= 1, got %d", got)
+	}
+}
+
+func TestRunResolvePingAnnotatesGeoIP(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.DNSServers = []string{"udp://resolver"}
+	cfg.Domains = []string{"example.com"}
+	cfg.Benchmark.Rounds = 2
+	cfg.Concurrency.Servers = 1
+	cfg.Concurrency.Domains = 1
+	cfg.Concurrency.Pings = 1
+
+	resolver := func(ctx context.Context, server, domain string, attempts int, timeout time.Duration, options dns.ResolveOptions) dns.DNSResult {
+		return dns.DNSResult{
+			Server:       server,
+			Domain:       domain,
+			ResponseTime: time.Millisecond,
+			Answers:      []dns.Answer{{Name: domain, Type: "A", Value: "192.0.2.1", TTL: 60, Family: "ipv4"}},
+		}
+	}
+	pinger := func(ctx context.Context, ip string, options ping.Options) ping.PingResult {
+		return ping.PingResult{IP: ip, RTT: time.Millisecond, PacketsSent: 1}
+	}
+	lookup := &fakeGeoLookup{}
+
+	results, err := runResolvePingWithRunnersAndGeoIP(context.Background(), cfg, logDiscard(), resolver, pinger, lookup)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 || len(results[0].DomainResults) != 2 {
+		t.Fatalf("unexpected results: %#v", results)
+	}
+	for _, domain := range results[0].DomainResults {
+		if domain.Answers[0].GeoIP == nil || domain.Answers[0].GeoIP.ASN != "64500" {
+			t.Fatalf("expected answer GeoIP annotation, got %#v", domain.Answers[0].GeoIP)
+		}
+		if domain.DnsPingResults.PingResults[0].GeoIP == nil || domain.DnsPingResults.PingResults[0].GeoIP.CountryName != "Testland" {
+			t.Fatalf("expected ping GeoIP annotation, got %#v", domain.DnsPingResults.PingResults[0].GeoIP)
+		}
+	}
+	if lookup.calls.Load() != 1 {
+		t.Fatalf("expected GeoIP lookup to be cached, got %d calls", lookup.calls.Load())
+	}
+}
+
+func TestRunDNSPingAnnotatesTargetGeoIP(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Mode = config.ModeDNSPing
+	cfg.DNSServers = []string{"udp://192.0.2.1"}
+	cfg.Benchmark.Rounds = 1
+	cfg.Concurrency.Servers = 1
+	cfg.Concurrency.Pings = 1
+
+	pinger := func(ctx context.Context, ip string, options ping.Options) ping.PingResult {
+		return ping.PingResult{IP: ip, RTT: time.Millisecond, PacketsSent: 1}
+	}
+	lookup := &fakeGeoLookup{}
+
+	results, err := runDNSPingWithRunnerAndGeoIP(context.Background(), cfg, logDiscard(), pinger, lookup)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected one result, got %d", len(results))
+	}
+	if results[0].TargetGeoIP == nil || results[0].TargetGeoIP.ASName != "Example AS" {
+		t.Fatalf("expected target GeoIP annotation, got %#v", results[0].TargetGeoIP)
 	}
 }
 

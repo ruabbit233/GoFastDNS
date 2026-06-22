@@ -3,6 +3,7 @@ module GoFastDNS
 go 1.23
 
 require (
+	github.com/ip2location/ip2location-go/v9 v9.8.0
 	github.com/miekg/dns v1.1.62
 	github.com/prometheus-community/pro-bing v0.5.0
 	github.com/xuri/excelize/v2 v2.9.0
@@ -23,4 +24,5 @@ require (
 	golang.org/x/sys v0.27.0 // indirect
 	golang.org/x/text v0.20.0 // indirect
 	golang.org/x/tools v0.22.0 // indirect
+	lukechampine.com/uint128 v1.2.0 // indirect
 )

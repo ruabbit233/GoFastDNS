@@ -1,6 +1,9 @@
 package ping
 
-import "time"
+import (
+	"GoFastDNS/internal/geoip"
+	"time"
+)
 
 type Options struct {
 	Count       int
@@ -17,6 +20,7 @@ type PingResult struct {
 	Error       error
 	PacketLoss  float64
 	PacketsSent int
+	GeoIP       *geoip.Info
 }
 
 type DNSPingResult struct {

@@ -12,6 +12,9 @@ func answerLabels(answers []dns.Answer) []string {
 		if answer.TTL > 0 {
 			label = fmt.Sprintf("%s TTL=%d", label, answer.TTL)
 		}
+		if geo := geoSummary(answer.GeoIP); geo != "" {
+			label = fmt.Sprintf("%s (%s)", label, geo)
+		}
 		labels = append(labels, label)
 	}
 	return labels

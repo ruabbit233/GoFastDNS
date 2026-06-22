@@ -30,6 +30,10 @@ func TestApplyFlagOverrides(t *testing.T) {
 		concServers: 2,
 		concDomains: 8,
 		concPings:   12,
+		geoEnabled:  true,
+		geoProvider: "ip2location",
+		geoDB:       "./geo.bin",
+		geoASNDB:    "./asn.bin",
 		rawFlags: []string{
 			"-ping-privileged",
 			"-rounds=3",
@@ -40,6 +44,7 @@ func TestApplyFlagOverrides(t *testing.T) {
 			"-concurrency-servers=2",
 			"-concurrency-domains=8",
 			"-concurrency-pings=12",
+			"-geoip-enabled",
 		},
 		outputPath: "results",
 		outputFmt:  "json",
@@ -91,6 +96,9 @@ func TestApplyFlagOverrides(t *testing.T) {
 	}
 	if cfg.Concurrency.Servers != 2 || cfg.Concurrency.Domains != 8 || cfg.Concurrency.Pings != 12 {
 		t.Fatalf("unexpected concurrency: %#v", cfg.Concurrency)
+	}
+	if !cfg.GeoIP.Enabled || cfg.GeoIP.Provider != "ip2location" || cfg.GeoIP.DatabasePath != "./geo.bin" || cfg.GeoIP.ASNDatabasePath != "./asn.bin" {
+		t.Fatalf("unexpected geoip config: %#v", cfg.GeoIP)
 	}
 	if cfg.Output.Path != "results" {
 		t.Fatalf("expected output path results, got %q", cfg.Output.Path)

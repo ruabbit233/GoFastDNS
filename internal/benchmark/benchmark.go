@@ -3,6 +3,7 @@ package benchmark
 import (
 	"GoFastDNS/internal/config"
 	"GoFastDNS/internal/dns"
+	"GoFastDNS/internal/geoip"
 	"GoFastDNS/internal/ping"
 	"context"
 	"errors"
@@ -85,9 +86,22 @@ func RunResolvePingContext(ctx context.Context, cfg config.Config, logger *log.L
 
 func runResolvePingWithRunners(ctx context.Context, cfg config.Config, logger *log.Logger, resolver resolveRunner, pinger ipPingRunner) ([]BenchmarkResult, error) {
 	config.ApplyDefaults(&cfg)
+	lookup, closeLookup, err := openConfiguredGeoIPLookup(cfg.GeoIP)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = closeLookup()
+	}()
+	return runResolvePingWithRunnersAndGeoIP(ctx, cfg, logger, resolver, pinger, lookup)
+}
+
+func runResolvePingWithRunnersAndGeoIP(ctx context.Context, cfg config.Config, logger *log.Logger, resolver resolveRunner, pinger ipPingRunner, lookup geoip.Lookup) ([]BenchmarkResult, error) {
+	config.ApplyDefaults(&cfg)
 	var results []BenchmarkResult
 	var wg sync.WaitGroup
 	mu := &sync.Mutex{}
+	geoAnnotator := newGeoIPAnnotator(lookup)
 	pingOptions := ping.Options{
 		Count:       cfg.Ping.Count,
 		Interval:    cfg.Ping.Interval,
@@ -124,7 +138,7 @@ func runResolvePingWithRunners(ctx context.Context, cfg config.Config, logger *l
 			totalRuns := cfg.Benchmark.Warmup + cfg.Benchmark.Rounds
 
 			for round := 1; round <= totalRuns; round++ {
-				roundResults, err := runResolveRound(ctx, cfg, s, round, pingOptions, resolveOptions, resolver, pinger, pingSem, logger)
+				roundResults, err := runResolveRound(ctx, cfg, s, round, pingOptions, resolveOptions, resolver, pinger, pingSem, geoAnnotator, logger)
 				if round <= cfg.Benchmark.Warmup {
 					if err != nil {
 						recordError(errCh, err)
@@ -170,9 +184,22 @@ func RunDNSPingContext(ctx context.Context, cfg config.Config, logger *log.Logge
 
 func runDNSPingWithRunner(ctx context.Context, cfg config.Config, logger *log.Logger, pinger ipPingRunner) ([]DNSPingBenchmarkResult, error) {
 	config.ApplyDefaults(&cfg)
+	lookup, closeLookup, err := openConfiguredGeoIPLookup(cfg.GeoIP)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		_ = closeLookup()
+	}()
+	return runDNSPingWithRunnerAndGeoIP(ctx, cfg, logger, pinger, lookup)
+}
+
+func runDNSPingWithRunnerAndGeoIP(ctx context.Context, cfg config.Config, logger *log.Logger, pinger ipPingRunner, lookup geoip.Lookup) ([]DNSPingBenchmarkResult, error) {
+	config.ApplyDefaults(&cfg)
 	results := make([]DNSPingBenchmarkResult, 0, len(cfg.DNSServers))
 	var wg sync.WaitGroup
 	mu := &sync.Mutex{}
+	geoAnnotator := newGeoIPAnnotator(lookup)
 	pingOptions := ping.Options{
 		Count:       cfg.Ping.Count,
 		Interval:    cfg.Ping.Interval,
@@ -212,6 +239,7 @@ func runDNSPingWithRunner(ctx context.Context, cfg config.Config, logger *log.Lo
 			} else {
 				result = runDNSPingTarget(ctx, result, cfg.Benchmark.Rounds, cfg.Benchmark.Warmup, target, pingOptions, pinger, pingSem)
 			}
+			result.TargetGeoIP = geoAnnotator.lookupIP(target)
 
 			mu.Lock()
 			results = append(results, result)
@@ -237,7 +265,7 @@ func runDNSPingWithRunner(ctx context.Context, cfg config.Config, logger *log.Lo
 	return results, firstError(errCh, ctx.Err())
 }
 
-func runResolveRound(ctx context.Context, cfg config.Config, server string, round int, pingOptions ping.Options, resolveOptions dns.ResolveOptions, resolver resolveRunner, pinger ipPingRunner, pingSem chan struct{}, logger *log.Logger) ([]DomainResult, error) {
+func runResolveRound(ctx context.Context, cfg config.Config, server string, round int, pingOptions ping.Options, resolveOptions dns.ResolveOptions, resolver resolveRunner, pinger ipPingRunner, pingSem chan struct{}, geoAnnotator *geoIPAnnotator, logger *log.Logger) ([]DomainResult, error) {
 	results := make([]DomainResult, 0, len(cfg.Domains))
 	var wg sync.WaitGroup
 	mu := &sync.Mutex{}
@@ -261,6 +289,7 @@ func runResolveRound(ctx context.Context, cfg config.Config, server string, roun
 			defer release(domainSem)
 
 			result := resolver(ctx, server, domain, cfg.Attempts, cfg.Timeout, resolveOptions)
+			result.Answers = geoAnnotator.annotateAnswers(result.Answers)
 			dnsPingResult := ping.PingDNSResultWithOptionsAndRunner(ctx, result, pingOptions, func(ctx context.Context, ip string, options ping.Options) ping.PingResult {
 				if err := acquire(ctx, pingSem); err != nil {
 					return ping.PingResult{IP: ip, Error: err}
@@ -268,6 +297,7 @@ func runResolveRound(ctx context.Context, cfg config.Config, server string, roun
 				defer release(pingSem)
 				return pinger(ctx, ip, options)
 			})
+			dnsPingResult.PingResults = geoAnnotator.annotatePingResults(dnsPingResult.PingResults)
 
 			domainResult := DomainResult{
 				Round:          round - cfg.Benchmark.Warmup,

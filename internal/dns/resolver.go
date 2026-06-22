@@ -1,9 +1,12 @@
 package dns
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -34,6 +37,11 @@ func NewResolver(address string) (Resolver, error) {
 			return &TCPResolver{server: u.Host}, nil
 		case "tls":
 			return &TLSResolver{server: u.Host}, nil
+		case "https":
+			if u.Host == "" {
+				return nil, fmt.Errorf("invalid DoH endpoint: missing host")
+			}
+			return &HTTPSResolver{endpoint: u.String()}, nil
 		default:
 			return nil, fmt.Errorf("unsupported protocol: %s", u.Scheme)
 		}
@@ -64,6 +72,117 @@ func (r *TLSResolver) Resolve(ctx context.Context, domain string, timeout time.D
 		Timeout: timeout,
 	}
 	return exchangeQueries(ctx, &c, r.server, "853", ProtocolTLS, domain, options)
+}
+
+var newDoHHTTPClient = func(timeout time.Duration) *http.Client {
+	return &http.Client{Timeout: timeout}
+}
+
+func (r *HTTPSResolver) Resolve(ctx context.Context, domain string, timeout time.Duration, options ResolveOptions) DNSResult {
+	result := DNSResult{
+		Server:   r.endpoint,
+		Domain:   domain,
+		Protocol: ProtocolHTTPS,
+		Answers:  make([]Answer, 0),
+	}
+
+	client := newDoHHTTPClient(timeout)
+	recordTypes := normalizeRecordTypes(options.RecordTypes)
+	successfulQueries := 0
+	var lastErr error
+	for _, recordType := range recordTypes {
+		if err := ctx.Err(); err != nil {
+			result.ResolutionError = err
+			result.QueryErrors = append(result.QueryErrors, err.Error())
+			return result
+		}
+
+		queryType, err := dnsQueryType(recordType)
+		if err != nil {
+			result.ResolutionError = err
+			return result
+		}
+
+		msg := dns.Msg{}
+		msg.SetQuestion(dns.Fqdn(domain), queryType)
+		payload, err := msg.Pack()
+		if err != nil {
+			result.ResolutionError = err
+			result.QueryErrors = append(result.QueryErrors, fmt.Sprintf("%s: pack DNS query: %v", recordType, err))
+			return result
+		}
+
+		resp, duration, err := exchangeHTTPSMessage(ctx, client, r.endpoint, payload)
+		result.ResponseTime += duration
+		if err != nil {
+			result.QueryErrors = append(result.QueryErrors, fmt.Sprintf("%s: %v", recordType, err))
+			lastErr = err
+			continue
+		}
+
+		result.ResponseCodes = append(result.ResponseCodes, ResponseCode{
+			RecordType: string(recordType),
+			Code:       resp.Rcode,
+			Name:       dns.RcodeToString[resp.Rcode],
+		})
+		if resp.Rcode != dns.RcodeSuccess {
+			err := fmt.Errorf("%s: DNS response code %s", recordType, dns.RcodeToString[resp.Rcode])
+			result.QueryErrors = append(result.QueryErrors, err.Error())
+			lastErr = err
+			continue
+		}
+
+		successfulQueries++
+		result.Answers = append(result.Answers, ParseAnswers(resp.Answer, recordType)...)
+	}
+
+	if len(recordTypes) > 0 {
+		result.ResponseTime /= time.Duration(len(recordTypes))
+	}
+	if successfulQueries == 0 && lastErr != nil {
+		result.ResolutionError = lastErr
+	}
+	if successfulQueries > 0 {
+		result.NoAnswer = !hasAddressAnswer(result.Answers)
+	}
+	return result
+}
+
+func exchangeHTTPSMessage(ctx context.Context, client *http.Client, endpoint string, payload []byte) (*dns.Msg, time.Duration, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Accept", "application/dns-message")
+	req.Header.Set("Content-Type", "application/dns-message")
+
+	start := time.Now()
+	httpResp, err := client.Do(req)
+	duration := time.Since(start)
+	if err != nil {
+		return nil, duration, fmt.Errorf("HTTPS exchange: %w", err)
+	}
+	defer func() {
+		_ = httpResp.Body.Close()
+	}()
+
+	if httpResp.StatusCode < 200 || httpResp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(httpResp.Body, 512))
+		if len(body) > 0 {
+			return nil, duration, fmt.Errorf("HTTP status %d: %s", httpResp.StatusCode, strings.TrimSpace(string(body)))
+		}
+		return nil, duration, fmt.Errorf("HTTP status %d", httpResp.StatusCode)
+	}
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, duration, fmt.Errorf("read HTTPS DNS response: %w", err)
+	}
+	msg := dns.Msg{}
+	if err := msg.Unpack(body); err != nil {
+		return nil, duration, fmt.Errorf("decode HTTPS DNS response: %w", err)
+	}
+	return &msg, duration, nil
 }
 
 func exchangeQueries(ctx context.Context, c *dns.Client, server, defaultPort string, protocol Protocol, domain string, options ResolveOptions) DNSResult {

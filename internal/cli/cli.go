@@ -39,6 +39,10 @@ type flagOptions struct {
 	concServers int
 	concDomains int
 	concPings   int
+	geoEnabled  bool
+	geoProvider string
+	geoDB       string
+	geoASNDB    string
 	outputPath  string
 	outputFmt   string
 }
@@ -125,6 +129,10 @@ func parseFlags(args []string, output io.Writer) (flagOptions, error) {
 	fs.IntVar(&opts.concServers, "concurrency-servers", -1, "DNS 服务器并发数")
 	fs.IntVar(&opts.concDomains, "concurrency-domains", -1, "每个 DNS 服务器内域名并发数")
 	fs.IntVar(&opts.concPings, "concurrency-pings", -1, "Ping 目标全局并发数")
+	fs.BoolVar(&opts.geoEnabled, "geoip-enabled", false, "启用 GeoIP/ASN 标注")
+	fs.StringVar(&opts.geoProvider, "geoip-provider", "", "GeoIP 数据来源，目前支持 ip2location")
+	fs.StringVar(&opts.geoDB, "geoip-db", "", "IP2Location 地理位置 BIN 数据库路径")
+	fs.StringVar(&opts.geoASNDB, "geoip-asn-db", "", "IP2Location ASN BIN 数据库路径")
 	fs.StringVar(&opts.outputPath, "output", "", "输出目录或文件路径")
 	fs.StringVar(&opts.outputFmt, "output-format", "", "输出格式，目前支持 excel、html 或 json")
 
@@ -193,6 +201,18 @@ func applyFlagOverrides(cfg *config.Config, opts flagOptions) {
 	}
 	if flagWasSet(opts.rawFlags, "concurrency-pings") {
 		cfg.Concurrency.Pings = opts.concPings
+	}
+	if flagWasSet(opts.rawFlags, "geoip-enabled") {
+		cfg.GeoIP.Enabled = opts.geoEnabled
+	}
+	if opts.geoProvider != "" {
+		cfg.GeoIP.Provider = opts.geoProvider
+	}
+	if opts.geoDB != "" {
+		cfg.GeoIP.DatabasePath = opts.geoDB
+	}
+	if opts.geoASNDB != "" {
+		cfg.GeoIP.ASNDatabasePath = opts.geoASNDB
 	}
 	if opts.outputPath != "" {
 		cfg.Output.Path = opts.outputPath

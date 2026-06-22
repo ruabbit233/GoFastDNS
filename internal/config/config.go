@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -27,6 +28,7 @@ type Config struct {
 	Ping        PingConfig        `yaml:"ping"`
 	Benchmark   BenchmarkConfig   `yaml:"benchmark"`
 	Concurrency ConcurrencyConfig `yaml:"concurrency"`
+	GeoIP       GeoIPConfig       `yaml:"geoip"`
 	Output      OutputConfig      `yaml:"output"`
 }
 
@@ -59,6 +61,13 @@ type ConcurrencyConfig struct {
 	Servers int `yaml:"servers"`
 	Domains int `yaml:"domains"`
 	Pings   int `yaml:"pings"`
+}
+
+type GeoIPConfig struct {
+	Enabled         bool   `yaml:"enabled"`
+	Provider        string `yaml:"provider"`
+	DatabasePath    string `yaml:"database_path"`
+	ASNDatabasePath string `yaml:"asn_database_path"`
 }
 
 type OutputConfig struct {
@@ -94,6 +103,12 @@ func DefaultConfig() Config {
 			Servers: 4,
 			Domains: 16,
 			Pings:   32,
+		},
+		GeoIP: GeoIPConfig{
+			Enabled:         false,
+			Provider:        "ip2location",
+			DatabasePath:    "./IP2LOCATION-LITE-DB11.BIN",
+			ASNDatabasePath: "./IP2LOCATION-LITE-ASN.BIN",
 		},
 		Output: OutputConfig{
 			Format: "excel",
@@ -170,6 +185,16 @@ func ApplyDefaults(config *Config) {
 		config.Concurrency.Pings == 0 {
 		config.Concurrency = defaults.Concurrency
 	}
+	if config.GeoIP.Provider == "" {
+		config.GeoIP.Provider = defaults.GeoIP.Provider
+	}
+	config.GeoIP.Provider = strings.ToLower(strings.TrimSpace(config.GeoIP.Provider))
+	if config.GeoIP.DatabasePath == "" {
+		config.GeoIP.DatabasePath = defaults.GeoIP.DatabasePath
+	}
+	if config.GeoIP.ASNDatabasePath == "" {
+		config.GeoIP.ASNDatabasePath = defaults.GeoIP.ASNDatabasePath
+	}
 	if config.Output.Format == "" {
 		config.Output.Format = defaults.Output.Format
 	}
@@ -187,6 +212,11 @@ func Validate(config Config) error {
 
 	if len(config.DNSServers) == 0 {
 		return errors.New("dns_servers is required")
+	}
+	for _, server := range config.DNSServers {
+		if err := validateDNSServer(server); err != nil {
+			return err
+		}
 	}
 	if config.Mode == ModeResolvePing && len(config.Domains) == 0 {
 		return errors.New("domains is required for resolve-ping mode")
@@ -255,6 +285,16 @@ func Validate(config Config) error {
 	if config.Concurrency.Pings <= 0 {
 		return errors.New("concurrency.pings must be greater than 0")
 	}
+	if config.GeoIP.Enabled {
+		switch config.GeoIP.Provider {
+		case "ip2location":
+		default:
+			return fmt.Errorf("unsupported geoip.provider %q", config.GeoIP.Provider)
+		}
+		if strings.TrimSpace(config.GeoIP.DatabasePath) == "" && strings.TrimSpace(config.GeoIP.ASNDatabasePath) == "" {
+			return errors.New("geoip.database_path or geoip.asn_database_path is required when geoip.enabled is true")
+		}
+	}
 
 	format := strings.ToLower(config.Output.Format)
 	switch format {
@@ -263,6 +303,36 @@ func Validate(config Config) error {
 		return fmt.Errorf("unsupported output format %q", config.Output.Format)
 	}
 
+	return nil
+}
+
+func validateDNSServer(server string) error {
+	address := strings.TrimSpace(server)
+	if address == "" {
+		return errors.New("dns_servers contains an empty value")
+	}
+	if strings.HasPrefix(address, "[/") {
+		parts := strings.SplitN(address, "/]", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid domain-specific DNS server format %q", server)
+		}
+		address = parts[1]
+	}
+	if !strings.Contains(address, "://") {
+		return nil
+	}
+	parsed, err := url.Parse(address)
+	if err != nil {
+		return fmt.Errorf("invalid DNS server URL %q: %w", server, err)
+	}
+	switch parsed.Scheme {
+	case "udp", "tcp", "tls", "https":
+	default:
+		return fmt.Errorf("unsupported DNS server protocol %q", parsed.Scheme)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("DNS server URL %q is missing host", server)
+	}
 	return nil
 }
 

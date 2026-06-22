@@ -48,6 +48,12 @@ func TestApplyDefaults(t *testing.T) {
 	if cfg.Concurrency.Servers != 4 || cfg.Concurrency.Domains != 16 || cfg.Concurrency.Pings != 32 {
 		t.Fatalf("unexpected default concurrency: %#v", cfg.Concurrency)
 	}
+	if cfg.GeoIP.Enabled || cfg.GeoIP.Provider != "ip2location" {
+		t.Fatalf("unexpected default geoip config: %#v", cfg.GeoIP)
+	}
+	if cfg.GeoIP.DatabasePath == "" || cfg.GeoIP.ASNDatabasePath == "" {
+		t.Fatalf("expected default geoip database paths, got %#v", cfg.GeoIP)
+	}
 }
 
 func TestValidateRejectsUnknownIPSelection(t *testing.T) {
@@ -80,6 +86,52 @@ func TestValidateAcceptsJSONOutput(t *testing.T) {
 
 	if err := Validate(cfg); err != nil {
 		t.Fatalf("expected json output to be valid: %v", err)
+	}
+}
+
+func TestValidateAcceptsDoHServer(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DNSServers = []string{"https://dns.google/dns-query"}
+	cfg.Domains = []string{"example.com"}
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected DoH server to be valid: %v", err)
+	}
+}
+
+func TestValidateRejectsUnsupportedDNSServerProtocol(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DNSServers = []string{"quic://dns.example/dns-query"}
+	cfg.Domains = []string{"example.com"}
+
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected unsupported DNS server protocol to be rejected")
+	}
+}
+
+func TestValidateGeoIPConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DNSServers = []string{"udp://8.8.8.8"}
+	cfg.Domains = []string{"example.com"}
+	cfg.GeoIP.Enabled = true
+	cfg.GeoIP.Provider = "ip2location"
+	cfg.GeoIP.DatabasePath = "./IP2LOCATION-LITE-DB11.BIN"
+	cfg.GeoIP.ASNDatabasePath = "./IP2LOCATION-LITE-ASN.BIN"
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected geoip config to be valid: %v", err)
+	}
+
+	cfg.GeoIP.Provider = "unknown"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected unsupported geoip provider to be rejected")
+	}
+
+	cfg.GeoIP.Provider = "ip2location"
+	cfg.GeoIP.DatabasePath = ""
+	cfg.GeoIP.ASNDatabasePath = ""
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected enabled geoip without database paths to be rejected")
 	}
 }
 
@@ -195,5 +247,8 @@ concurrency:
 	}
 	if cfg.Concurrency.Domains != 16 || cfg.Concurrency.Pings != 32 {
 		t.Fatalf("expected nested concurrency defaults to remain, got %#v", cfg.Concurrency)
+	}
+	if cfg.GeoIP.Provider != "ip2location" || cfg.GeoIP.DatabasePath == "" || cfg.GeoIP.ASNDatabasePath == "" {
+		t.Fatalf("expected geoip defaults to remain, got %#v", cfg.GeoIP)
 	}
 }

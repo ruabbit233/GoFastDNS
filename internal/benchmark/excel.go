@@ -84,7 +84,7 @@ func SaveResultsToExcel(servers []string, results []BenchmarkResult, outputPath 
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+5), rowIdx+6),
 				strings.Join(answerLabels(domain.Answers), "\n"))
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+6), rowIdx+6),
-				pingTargets(domain.DnsPingResults.PingResults))
+				pingTargetLabels(domain.DnsPingResults.PingResults))
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+7), rowIdx+6),
 				durationMS(domain.DnsPingResults.AvgRTT))
 			pingErrors := pingErrorMessages(domain.DnsPingResults.PingResults)
@@ -134,12 +134,27 @@ func pingTargets(results []ping.PingResult) []string {
 	return targets
 }
 
+func pingTargetLabels(results []ping.PingResult) []string {
+	if results == nil {
+		return []string{}
+	}
+	labels := make([]string, 0, len(results))
+	for _, result := range results {
+		label := result.IP
+		if geo := geoSummary(result.GeoIP); geo != "" {
+			label = fmt.Sprintf("%s (%s)", label, geo)
+		}
+		labels = append(labels, label)
+	}
+	return labels
+}
+
 func SaveDNSPingResultsToExcel(results []DNSPingBenchmarkResult, outputPath string) (string, error) {
 	f := excelize.NewFile()
 	sheet := "DNS Ping测试结果"
 	f.SetSheetName("Sheet1", sheet)
 
-	headers := []string{"排名", "DNS服务器", "Ping目标", "综合分", "平均延迟(ms)", "p50(ms)", "p95(ms)", "成功率(%)", "丢包率(%)", "发送包数", "错误信息"}
+	headers := []string{"排名", "DNS服务器", "Ping目标", "目标地理/ASN", "综合分", "平均延迟(ms)", "p50(ms)", "p95(ms)", "成功率(%)", "丢包率(%)", "发送包数", "错误信息"}
 	for i, header := range headers {
 		col := getColumnName(i)
 		f.SetCellValue(sheet, fmt.Sprintf("%s1", col), header)
@@ -152,15 +167,16 @@ func SaveDNSPingResultsToExcel(results []DNSPingBenchmarkResult, outputPath stri
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), i+1)
 		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), result.Server)
 		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), result.Target)
-		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), result.Score)
-		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), durationMS(result.RTT))
-		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), durationMS(result.Stats.Median))
-		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), durationMS(result.Stats.P95))
-		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), result.SuccessRate*100)
-		f.SetCellValue(sheet, fmt.Sprintf("I%d", row), result.PacketLoss*100)
-		f.SetCellValue(sheet, fmt.Sprintf("J%d", row), result.PacketsSent)
+		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), geoSummary(result.TargetGeoIP))
+		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), result.Score)
+		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), durationMS(result.RTT))
+		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), durationMS(result.Stats.Median))
+		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), durationMS(result.Stats.P95))
+		f.SetCellValue(sheet, fmt.Sprintf("I%d", row), result.SuccessRate*100)
+		f.SetCellValue(sheet, fmt.Sprintf("J%d", row), result.PacketLoss*100)
+		f.SetCellValue(sheet, fmt.Sprintf("K%d", row), result.PacketsSent)
 		if result.Error != nil {
-			f.SetCellValue(sheet, fmt.Sprintf("K%d", row), result.Error.Error())
+			f.SetCellValue(sheet, fmt.Sprintf("L%d", row), result.Error.Error())
 		}
 	}
 

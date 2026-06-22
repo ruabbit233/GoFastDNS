@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"GoFastDNS/internal/geoip"
 	"context"
 	"time"
 )
@@ -8,9 +9,10 @@ import (
 type Protocol string
 
 const (
-	ProtocolUDP Protocol = "UDP"
-	ProtocolTCP Protocol = "TCP"
-	ProtocolTLS Protocol = "TLS"
+	ProtocolUDP   Protocol = "UDP"
+	ProtocolTCP   Protocol = "TCP"
+	ProtocolTLS   Protocol = "TLS"
+	ProtocolHTTPS Protocol = "HTTPS"
 )
 
 type RecordType string
@@ -25,13 +27,14 @@ type ResolveOptions struct {
 }
 
 type Answer struct {
-	QueryType string `json:"query_type,omitempty"`
-	Name      string `json:"name"`
-	Type      string `json:"type"`
-	Value     string `json:"value"`
-	TTL       uint32 `json:"ttl"`
-	Family    string `json:"family,omitempty"`
-	Priority  int    `json:"priority,omitempty"`
+	QueryType string      `json:"query_type,omitempty"`
+	Name      string      `json:"name"`
+	Type      string      `json:"type"`
+	Value     string      `json:"value"`
+	TTL       uint32      `json:"ttl"`
+	Family    string      `json:"family,omitempty"`
+	Priority  int         `json:"priority,omitempty"`
+	GeoIP     *geoip.Info `json:"geoip,omitempty"`
 }
 
 type ResponseCode struct {
@@ -67,4 +70,8 @@ type TCPResolver struct {
 
 type TLSResolver struct {
 	server string
+}
+
+type HTTPSResolver struct {
+	endpoint string
 }

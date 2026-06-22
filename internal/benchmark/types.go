@@ -2,6 +2,7 @@ package benchmark
 
 import (
 	"GoFastDNS/internal/dns"
+	"GoFastDNS/internal/geoip"
 	"GoFastDNS/internal/ping"
 	"time"
 )
@@ -56,6 +57,7 @@ type DNSPingRoundResult struct {
 type DNSPingBenchmarkResult struct {
 	Server       string
 	Target       string
+	TargetGeoIP  *geoip.Info
 	Rounds       int
 	Warmup       int
 	RTT          time.Duration

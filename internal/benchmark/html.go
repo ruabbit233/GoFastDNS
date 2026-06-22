@@ -58,6 +58,7 @@ type dnsPingHTMLRow struct {
 	Rank         int
 	Server       string
 	Target       string
+	TargetGeo    string
 	Rounds       int
 	RTT          string
 	MedianRTT    string
@@ -166,7 +167,7 @@ func buildDomainHTMLRows(results []DomainResult) []domainHTMLRow {
 			Retries:      result.RetryCount,
 			NoAnswer:     result.NoAnswer,
 			Answers:      answerLabels(result.Answers),
-			PingTargets:  pingTargets(result.DnsPingResults.PingResults),
+			PingTargets:  pingTargetLabels(result.DnsPingResults.PingResults),
 			AvgPing:      formatDuration(result.DnsPingResults.AvgRTT),
 			PingErrors:   pingErrorMessages(result.DnsPingResults.PingResults),
 		}
@@ -188,6 +189,7 @@ func buildDNSPingHTMLRows(results []DNSPingBenchmarkResult) []dnsPingHTMLRow {
 			Rank:         i + 1,
 			Server:       result.Server,
 			Target:       result.Target,
+			TargetGeo:    geoSummary(result.TargetGeoIP),
 			Rounds:       result.Rounds,
 			RTT:          formatDuration(result.RTT),
 			MedianRTT:    formatDuration(result.Stats.Median),
@@ -684,6 +686,7 @@ tr:last-child td { border-bottom: 0; }
           <div>
             <div class="server">{{.Server}}</div>
             <div class="muted">目标: {{.Target}}</div>
+            {{if .TargetGeo}}<div class="muted">{{.TargetGeo}}</div>{{end}}
           </div>
           <div class="rank">#{{.Rank}}</div>
         </div>
@@ -730,6 +733,7 @@ tr:last-child td { border-bottom: 0; }
             <th>排名</th>
             <th>DNS 服务器</th>
             <th>Ping 目标</th>
+            <th>目标地理/ASN</th>
             <th class="num">综合分</th>
             <th class="num">平均延迟</th>
             <th class="num">p50 / p95</th>
@@ -745,6 +749,7 @@ tr:last-child td { border-bottom: 0; }
             <td>#{{.Rank}}</td>
             <td>{{.Server}}</td>
             <td>{{.Target}}</td>
+            <td>{{if .TargetGeo}}{{.TargetGeo}}{{else}}<span class="muted">-</span>{{end}}</td>
             <td class="num">{{.Score}}</td>
             <td class="num">{{.RTT}}</td>
             <td class="num">{{.MedianRTT}} / {{.P95RTT}}</td>

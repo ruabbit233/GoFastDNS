@@ -2,6 +2,7 @@ package benchmark
 
 import (
 	"GoFastDNS/internal/dns"
+	"GoFastDNS/internal/geoip"
 	"GoFastDNS/internal/ping"
 	"encoding/json"
 	"fmt"
@@ -81,11 +82,12 @@ type domainJSONResult struct {
 }
 
 type pingJSONResult struct {
-	IP          string  `json:"ip"`
-	RTTMS       float64 `json:"rtt_ms"`
-	PacketLoss  float64 `json:"packet_loss"`
-	PacketsSent int     `json:"packets_sent"`
-	Error       string  `json:"error,omitempty"`
+	IP          string      `json:"ip"`
+	RTTMS       float64     `json:"rtt_ms"`
+	PacketLoss  float64     `json:"packet_loss"`
+	PacketsSent int         `json:"packets_sent"`
+	GeoIP       *geoip.Info `json:"geoip,omitempty"`
+	Error       string      `json:"error,omitempty"`
 }
 
 type dnsPingJSONReport struct {
@@ -109,6 +111,7 @@ type dnsPingJSONSummary struct {
 type dnsPingJSONResult struct {
 	Server       string                   `json:"server"`
 	Target       string                   `json:"target"`
+	TargetGeoIP  *geoip.Info              `json:"target_geoip,omitempty"`
 	Rounds       int                      `json:"rounds"`
 	Warmup       int                      `json:"warmup"`
 	RTTMS        float64                  `json:"rtt_ms"`
@@ -289,6 +292,7 @@ func buildPingJSONResults(results []ping.PingResult) []pingJSONResult {
 			RTTMS:       durationMS(result.RTT),
 			PacketLoss:  result.PacketLoss,
 			PacketsSent: result.PacketsSent,
+			GeoIP:       result.GeoIP,
 		}
 		if result.Error != nil {
 			row.Error = result.Error.Error()
@@ -337,6 +341,7 @@ func buildDNSPingJSONResults(results []DNSPingBenchmarkResult) []dnsPingJSONResu
 		row := dnsPingJSONResult{
 			Server:       result.Server,
 			Target:       result.Target,
+			TargetGeoIP:  result.TargetGeoIP,
 			Rounds:       result.Rounds,
 			Warmup:       result.Warmup,
 			RTTMS:        durationMS(result.RTT),
