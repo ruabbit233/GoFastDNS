@@ -220,6 +220,51 @@ func TestRunResolvePingMultiRoundStats(t *testing.T) {
 	}
 }
 
+func TestRunResolvePingTreatsZeroRTTAsPingFailure(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.DNSServers = []string{"udp://resolver"}
+	cfg.Domains = []string{"example.com"}
+	cfg.Benchmark.Rounds = 1
+	cfg.Benchmark.Warmup = 0
+	cfg.Concurrency.Servers = 1
+	cfg.Concurrency.Domains = 1
+	cfg.Concurrency.Pings = 1
+
+	resolver := func(ctx context.Context, server, domain string, attempts int, timeout time.Duration, options dns.ResolveOptions) dns.DNSResult {
+		return dns.DNSResult{
+			Server:       server,
+			Domain:       domain,
+			ResponseTime: time.Millisecond,
+			Answers:      []dns.Answer{{Type: "A", Value: "192.0.2.1"}},
+		}
+	}
+	pinger := func(ctx context.Context, ip string, options ping.Options) ping.PingResult {
+		return ping.PingResult{IP: ip, PacketLoss: 100, PacketsSent: 3}
+	}
+
+	results, err := runResolvePingWithRunners(context.Background(), cfg, logDiscard(), resolver, pinger)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(results) != 1 || len(results[0].DomainResults) != 1 {
+		t.Fatalf("unexpected results: %#v", results)
+	}
+	result := results[0]
+	if result.PingSuccessRate != 0 {
+		t.Fatalf("expected ping success rate 0, got %.2f", result.PingSuccessRate)
+	}
+	if result.AvgPingRTT != 0 || result.PingStats.Count != 0 {
+		t.Fatalf("expected failed ping to be excluded from latency stats, avg=%s count=%d", result.AvgPingRTT, result.PingStats.Count)
+	}
+	domainPing := result.DomainResults[0].DnsPingResults
+	if domainPing.Error == nil {
+		t.Fatal("expected domain ping error for zero RTT")
+	}
+	if len(domainPing.PingResults) != 1 || domainPing.PingResults[0].Error == nil {
+		t.Fatalf("expected ping target error, got %#v", domainPing.PingResults)
+	}
+}
+
 func TestRunResolvePingKeepsResolverTimeoutAsResultError(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.DNSServers = []string{"tls://dns.google"}
@@ -264,6 +309,36 @@ func TestRunResolvePingKeepsResolverTimeoutAsResultError(t *testing.T) {
 	}
 	if results[0].DNSSuccessRate != 0 {
 		t.Fatalf("expected DNS success rate 0, got %.2f", results[0].DNSSuccessRate)
+	}
+}
+
+func TestRunDNSPingTargetTreatsZeroRTTAsFailure(t *testing.T) {
+	result := DNSPingBenchmarkResult{
+		Server: "udp://192.0.2.1",
+		Target: "192.0.2.1",
+		Rounds: 1,
+	}
+	pingSem := make(chan struct{}, 1)
+	pinger := func(ctx context.Context, ip string, options ping.Options) ping.PingResult {
+		return ping.PingResult{IP: ip, PacketLoss: 100, PacketsSent: 3}
+	}
+
+	result = runDNSPingTarget(context.Background(), result, 1, 0, "192.0.2.1", ping.Options{}, pinger, pingSem)
+
+	if result.Error == nil {
+		t.Fatal("expected dns-ping target error for zero RTT")
+	}
+	if result.SuccessRate != 0 {
+		t.Fatalf("expected success rate 0, got %.2f", result.SuccessRate)
+	}
+	if result.RTT != 0 || result.Stats.Count != 0 {
+		t.Fatalf("expected failed ping to be excluded from latency stats, rtt=%s count=%d", result.RTT, result.Stats.Count)
+	}
+	if result.PacketLoss != 100 || result.PacketsSent != 3 {
+		t.Fatalf("expected failed ping packet stats to be preserved, loss=%.1f sent=%d", result.PacketLoss, result.PacketsSent)
+	}
+	if len(result.RoundResults) != 1 || result.RoundResults[0].Error == nil {
+		t.Fatalf("expected round error, got %#v", result.RoundResults)
 	}
 }
 

@@ -86,6 +86,7 @@ type pingJSONResult struct {
 	RTTMS       float64     `json:"rtt_ms"`
 	PacketLoss  float64     `json:"packet_loss"`
 	PacketsSent int         `json:"packets_sent"`
+	PacketsRecv int         `json:"packets_recv"`
 	GeoIP       *geoip.Info `json:"geoip,omitempty"`
 	Error       string      `json:"error,omitempty"`
 }
@@ -292,10 +293,11 @@ func buildPingJSONResults(results []ping.PingResult) []pingJSONResult {
 			RTTMS:       durationMS(result.RTT),
 			PacketLoss:  result.PacketLoss,
 			PacketsSent: result.PacketsSent,
+			PacketsRecv: result.PacketsRecv,
 			GeoIP:       result.GeoIP,
 		}
-		if result.Error != nil {
-			row.Error = result.Error.Error()
+		if err := result.FailureError(); err != nil {
+			row.Error = err.Error()
 		}
 		rows = append(rows, row)
 	}

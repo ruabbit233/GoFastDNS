@@ -20,6 +20,7 @@ type PingResult struct {
 	Error       error
 	PacketLoss  float64
 	PacketsSent int
+	PacketsRecv int
 	GeoIP       *geoip.Info
 }
 

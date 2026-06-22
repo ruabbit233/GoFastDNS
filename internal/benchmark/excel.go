@@ -116,8 +116,8 @@ func SaveResultsToExcel(servers []string, results []BenchmarkResult, outputPath 
 func pingErrorMessages(results []ping.PingResult) []string {
 	messages := make([]string, 0)
 	for _, result := range results {
-		if result.Error != nil {
-			messages = append(messages, fmt.Sprintf("%s: %v", result.IP, result.Error))
+		if err := result.FailureError(); err != nil {
+			messages = append(messages, fmt.Sprintf("%s: %v", result.IP, err))
 		}
 	}
 	return messages
@@ -173,7 +173,7 @@ func SaveDNSPingResultsToExcel(results []DNSPingBenchmarkResult, outputPath stri
 		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), durationMS(result.Stats.Median))
 		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), durationMS(result.Stats.P95))
 		f.SetCellValue(sheet, fmt.Sprintf("I%d", row), result.SuccessRate*100)
-		f.SetCellValue(sheet, fmt.Sprintf("J%d", row), result.PacketLoss*100)
+		f.SetCellValue(sheet, fmt.Sprintf("J%d", row), result.PacketLoss)
 		f.SetCellValue(sheet, fmt.Sprintf("K%d", row), result.PacketsSent)
 		if result.Error != nil {
 			f.SetCellValue(sheet, fmt.Sprintf("L%d", row), result.Error.Error())

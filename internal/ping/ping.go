@@ -2,6 +2,7 @@ package ping
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strings"
 	"time"
@@ -49,12 +50,17 @@ func PingIPWithOptionsContext(ctx context.Context, ip string, options Options) P
 	}
 
 	stats := pinger.Statistics()
-	return PingResult{
+	result := PingResult{
 		IP:          ip,
 		RTT:         stats.AvgRtt,
 		PacketLoss:  stats.PacketLoss,
 		PacketsSent: stats.PacketsSent,
+		PacketsRecv: stats.PacketsRecv,
 	}
+	if err := result.FailureError(); err != nil {
+		result.Error = err
+	}
+	return result
 }
 
 func PingDNSResult(result dns.DNSResult) DNSPingResult {
@@ -94,10 +100,13 @@ func PingDNSResultWithOptionsAndRunner(ctx context.Context, result dns.DNSResult
 			}
 		}
 		pingResult := runner(ctx, ip, options)
+		if err := pingResult.FailureError(); err != nil {
+			pingResult.Error = err
+		}
 		pingResults = append(pingResults, pingResult)
 
 		// 只计算成功的 ping 结果
-		if pingResult.Error == nil {
+		if pingResult.Successful() {
 			totalRTT += pingResult.RTT
 			successfulPings++
 		}
@@ -113,9 +122,29 @@ func PingDNSResultWithOptionsAndRunner(ctx context.Context, result dns.DNSResult
 		AvgRTT:      avgRTT,
 	}
 	if len(pingResults) > 0 && successfulPings == 0 {
-		dnsPingResult.Error = pingResults[0].Error
+		dnsPingResult.Error = pingResults[0].FailureError()
 	}
 	return dnsPingResult
+}
+
+func (r PingResult) Successful() bool {
+	return r.FailureError() == nil
+}
+
+func (r PingResult) FailureError() error {
+	if r.Error != nil {
+		return r.Error
+	}
+	if r.PacketsSent > 0 && r.PacketsRecv == 0 && r.PacketLoss >= 100 {
+		return fmt.Errorf("no ping replies received from %s (%d packets sent, %.1f%% packet loss)", r.IP, r.PacketsSent, r.PacketLoss)
+	}
+	if r.RTT <= 0 {
+		if r.IP == "" {
+			return fmt.Errorf("no successful ping RTT")
+		}
+		return fmt.Errorf("no successful ping RTT for %s", r.IP)
+	}
+	return nil
 }
 
 func averageRTT(totalRTT time.Duration, successfulPings int) time.Duration {

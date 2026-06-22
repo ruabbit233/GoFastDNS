@@ -383,6 +383,7 @@ func runDNSPingTarget(ctx context.Context, result DNSPingBenchmarkResult, rounds
 	successCount := 0
 	var totalLoss float64
 	var totalPackets int
+	measuredRounds := 0
 	var lastErr error
 
 	for round := 1; round <= totalRuns; round++ {
@@ -405,11 +406,15 @@ func runDNSPingTarget(ctx context.Context, result DNSPingBenchmarkResult, rounds
 			RTT:         pingResult.RTT,
 			PacketLoss:  pingResult.PacketLoss,
 			PacketsSent: pingResult.PacketsSent,
-			Error:       pingResult.Error,
 		}
+		pingErr := pingResult.FailureError()
+		roundResult.Error = pingErr
 		roundResults = append(roundResults, roundResult)
-		if pingResult.Error != nil {
-			lastErr = pingResult.Error
+		measuredRounds++
+		totalLoss += pingResult.PacketLoss
+		totalPackets += pingResult.PacketsSent
+		if pingErr != nil {
+			lastErr = pingErr
 			if err := ctx.Err(); err != nil {
 				result.RoundResults = roundResults
 				result.Error = err
@@ -420,8 +425,6 @@ func runDNSPingTarget(ctx context.Context, result DNSPingBenchmarkResult, rounds
 
 		successCount++
 		rtts = append(rtts, pingResult.RTT)
-		totalLoss += pingResult.PacketLoss
-		totalPackets += pingResult.PacketsSent
 	}
 
 	stats := calculateDurationStats(rtts)
@@ -429,10 +432,11 @@ func runDNSPingTarget(ctx context.Context, result DNSPingBenchmarkResult, rounds
 	result.Stats = stats
 	result.RoundResults = roundResults
 	result.SuccessRate = ratio(successCount, rounds)
-	if successCount > 0 {
-		result.PacketLoss = totalLoss / float64(successCount)
-		result.PacketsSent = totalPackets / successCount
-	} else if lastErr != nil {
+	if measuredRounds > 0 {
+		result.PacketLoss = totalLoss / float64(measuredRounds)
+		result.PacketsSent = totalPackets / measuredRounds
+	}
+	if successCount == 0 && lastErr != nil {
 		result.Error = lastErr
 	}
 	return result
