@@ -505,6 +505,11 @@ func TestSaveResultsToHTML(t *testing.T) {
 	if !strings.Contains(html, "DNS 解析与 CDN 延迟排行") {
 		t.Fatal("expected resolve-ping summary section")
 	}
+	for _, label := range []string{"解析 IP Ping 平均 RTT", "DNS 查询平均耗时", "DNS 查询成功率", "解析 IP Ping 成功率"} {
+		if !strings.Contains(html, label) {
+			t.Fatalf("expected resolve-ping metric label %q", label)
+		}
+	}
 	if !strings.Contains(html, "example.com") {
 		t.Fatal("expected domain details")
 	}
@@ -549,6 +554,9 @@ func TestSaveDNSPingResultsToHTMLUsesExplicitFilePath(t *testing.T) {
 	html := string(content)
 	if !strings.Contains(html, "DNS 节点 Ping 排行") {
 		t.Fatal("expected dns-ping summary section")
+	}
+	if !strings.Contains(html, "Ping 平均 RTT") {
+		t.Fatal("expected dns-ping RTT metric label")
 	}
 	if !strings.Contains(html, "25.0%") {
 		t.Fatal("expected packet loss percentage")

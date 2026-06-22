@@ -538,25 +538,25 @@ tr:last-child td { border-bottom: 0; }
         </div>
         <div class="metric-list">
           <div class="metric">
-            <span>解析 IP 平均延迟</span>
+            <span>解析 IP Ping 平均 RTT</span>
             <strong>{{.AvgPing}}</strong>
             <div class="bar"><div class="fill ping" style="--w: {{formatBarWidth .PingBarWidth}}"></div></div>
           </div>
           <div class="metric">
-            <span>Ping p50 / p95</span>
+            <span>解析 IP Ping p50 / p95</span>
             <strong>{{.MedianPing}} / {{.P95Ping}}</strong>
           </div>
           <div class="metric">
-            <span>DNS 平均响应</span>
+            <span>DNS 查询平均耗时</span>
             <strong>{{.AvgDNS}}</strong>
             <div class="bar"><div class="fill" style="--w: {{formatBarWidth .DNSBarWidth}}"></div></div>
           </div>
           <div class="metric">
-            <span>DNS p50 / p95</span>
+            <span>DNS 查询 p50 / p95</span>
             <strong>{{.MedianDNS}} / {{.P95DNS}}</strong>
           </div>
           <div class="metric">
-            <span>DNS / Ping 成功率</span>
+            <span>DNS 查询 / 解析 IP Ping 成功率</span>
             <strong>{{.DNSSuccessRate}} / {{.PingSuccessRate}}</strong>
             <div class="bar"><div class="fill success" style="--w: {{formatBarWidth .SuccessBarWidth}}"></div></div>
           </div>
@@ -587,12 +587,12 @@ tr:last-child td { border-bottom: 0; }
             <th>排名</th>
             <th>DNS 服务器</th>
             <th class="num">综合分</th>
-            <th class="num">解析 IP 平均延迟</th>
-            <th class="num">Ping p50 / p95</th>
-            <th class="num">DNS 平均响应</th>
-            <th class="num">DNS p50 / p95</th>
-            <th class="num">DNS 成功率</th>
-            <th class="num">Ping 成功率</th>
+            <th class="num">解析 IP Ping 平均 RTT</th>
+            <th class="num">解析 IP Ping p50 / p95</th>
+            <th class="num">DNS 查询平均耗时</th>
+            <th class="num">DNS 查询 p50 / p95</th>
+            <th class="num">DNS 查询成功率</th>
+            <th class="num">解析 IP Ping 成功率</th>
             <th class="num">总重试</th>
           </tr>
         </thead>
@@ -623,7 +623,7 @@ tr:last-child td { border-bottom: 0; }
       <article class="detail-block">
         <div class="detail-title">
           <strong>#{{.Rank}} {{.Server}}</strong>
-          <span class="muted">解析 IP 平均延迟 {{.AvgPing}}</span>
+          <span class="muted">解析 IP Ping 平均 RTT {{.AvgPing}}</span>
         </div>
         <div class="table-wrap">
           <table>
@@ -631,11 +631,11 @@ tr:last-child td { border-bottom: 0; }
               <tr>
                 <th>域名</th>
                 <th class="num">轮次</th>
-                <th class="num">DNS 响应</th>
+                <th class="num">DNS 查询耗时</th>
                 <th class="num">重试</th>
                 <th>解析结果</th>
                 <th>Ping 目标</th>
-                <th class="num">平均延迟</th>
+                <th class="num">Ping 平均 RTT</th>
                 <th>错误</th>
               </tr>
             </thead>
@@ -692,12 +692,12 @@ tr:last-child td { border-bottom: 0; }
         </div>
         <div class="metric-list">
           <div class="metric">
-            <span>平均延迟</span>
+            <span>Ping 平均 RTT</span>
             <strong>{{.RTT}}</strong>
             <div class="bar"><div class="fill ping" style="--w: {{formatBarWidth .RTTBarWidth}}"></div></div>
           </div>
           <div class="metric">
-            <span>p50 / p95</span>
+            <span>Ping p50 / p95</span>
             <strong>{{.MedianRTT}} / {{.P95RTT}}</strong>
           </div>
           <div class="metric">
@@ -706,7 +706,7 @@ tr:last-child td { border-bottom: 0; }
             <div class="bar"><div class="fill loss" style="--w: {{formatBarWidth .LossBarWidth}}"></div></div>
           </div>
           <div class="metric">
-            <span>成功率 / 综合分</span>
+            <span>Ping 成功率 / 综合分</span>
             <strong>{{.SuccessRate}} / {{.Score}}</strong>
           </div>
           <div class="metric">
@@ -735,9 +735,9 @@ tr:last-child td { border-bottom: 0; }
             <th>Ping 目标</th>
             <th>目标地理/ASN</th>
             <th class="num">综合分</th>
-            <th class="num">平均延迟</th>
-            <th class="num">p50 / p95</th>
-            <th class="num">成功率</th>
+            <th class="num">Ping 平均 RTT</th>
+            <th class="num">Ping p50 / p95</th>
+            <th class="num">Ping 成功率</th>
             <th class="num">丢包率</th>
             <th class="num">发送包数</th>
             <th>错误</th>

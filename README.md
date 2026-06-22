@@ -125,7 +125,19 @@ domains:
 -output-format   输出格式，目前支持 html、excel 或 json
 ```
 
-`benchmark.rounds` 控制正式测试轮数，`benchmark.warmup` 控制预热轮数，预热结果不会进入统计。`rounds: 1`、`warmup: 0` 的行为接近旧版单轮测试。报告会展示平均值、p50、p95、jitter、DNS 成功率、Ping 成功率和综合分；失败 ping 不会作为 0 延迟参与统计。
+`benchmark.rounds` 控制正式测试轮数，`benchmark.warmup` 控制预热轮数，预热结果不会进入统计。`rounds: 1`、`warmup: 0` 的行为接近旧版单轮测试。报告会展示 DNS 查询耗时、解析 IP Ping RTT、p50、p95、jitter、DNS 查询成功率、解析 IP Ping 成功率和综合分；失败 ping 不会作为 0 延迟参与统计。
+
+## 报告指标说明
+
+`resolve-ping` 报告同时包含两类延迟指标，含义不同:
+
+- `DNS 查询平均耗时` / `DNS 查询 p50 / p95`: 从发起 DNS 查询到收到该 DNS 服务器响应的耗时，只衡量 DNS 解析请求本身。
+- `解析 IP Ping 平均 RTT` / `解析 IP Ping p50 / p95`: 对该 DNS 返回的 A/AAAA 记录执行 ping 后得到的往返时间，用于估计解析结果对应的网络或 CDN 节点是否更近。
+- `DNS 查询成功率`: 成功返回 DNS 响应的正式测试次数占比。
+- `解析 IP Ping 成功率`: DNS 解析成功后，解析出的实际 Ping 目标至少有成功 RTT 的正式测试次数占比。
+- `综合分`: 按 `benchmark.score` 中的 DNS 延迟、Ping 延迟和成功率权重计算的排序分数，分数越高排名越靠前。
+
+`dns-ping` 模式不会解析业务域名，只直接 ping DNS 服务器节点，因此报告中的 `Ping 平均 RTT`、`Ping p50 / p95` 和 `Ping 成功率` 都表示到 DNS 服务器本身的网络连通性。
 
 `concurrency.servers` 控制 DNS 服务器并发数，`concurrency.domains` 控制每个 DNS 服务器内的域名并发数，`concurrency.pings` 控制全局 Ping 目标并发数。按下 Ctrl+C 时，程序会尽量停止启动新任务并取消正在等待的 DNS/Ping 操作。
 

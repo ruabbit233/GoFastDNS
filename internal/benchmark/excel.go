@@ -30,14 +30,14 @@ func SaveResultsToExcel(servers []string, results []BenchmarkResult, outputPath 
 
 		// 写入汇总信息表头
 		f.SetCellValue(sheet, fmt.Sprintf("%s2", serverCol), "综合分")
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+1)), "DNS平均(ms)")
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+2)), "DNS p50(ms)")
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+3)), "DNS p95(ms)")
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+4)), "Ping平均(ms)")
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+5)), "Ping p50(ms)")
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+6)), "Ping p95(ms)")
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+7)), "DNS成功率(%)")
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+8)), "Ping成功率(%)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+1)), "DNS查询平均耗时(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+2)), "DNS查询p50(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+3)), "DNS查询p95(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+4)), "解析IP Ping平均RTT(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+5)), "解析IP Ping p50(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+6)), "解析IP Ping p95(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+7)), "DNS查询成功率(%)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+8)), "解析IP Ping成功率(%)")
 
 		// 写入汇总数据
 		f.SetCellValue(sheet, fmt.Sprintf("%s3", serverCol), result.Score)
@@ -58,7 +58,7 @@ func SaveResultsToExcel(servers []string, results []BenchmarkResult, outputPath 
 		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+4)), "错误信息")
 		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+5)), "解析结果")
 		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+6)), "Ping目标")
-		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+7)), "平均延迟(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+7)), "Ping平均RTT(ms)")
 		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+8)), "Ping错误")
 
 		// 写入域名测试详情
@@ -154,7 +154,7 @@ func SaveDNSPingResultsToExcel(results []DNSPingBenchmarkResult, outputPath stri
 	sheet := "DNS Ping测试结果"
 	f.SetSheetName("Sheet1", sheet)
 
-	headers := []string{"排名", "DNS服务器", "Ping目标", "目标地理/ASN", "综合分", "平均延迟(ms)", "p50(ms)", "p95(ms)", "成功率(%)", "丢包率(%)", "发送包数", "错误信息"}
+	headers := []string{"排名", "DNS服务器", "Ping目标", "目标地理/ASN", "综合分", "Ping平均RTT(ms)", "Ping p50(ms)", "Ping p95(ms)", "Ping成功率(%)", "丢包率(%)", "发送包数", "错误信息"}
 	for i, header := range headers {
 		col := getColumnName(i)
 		f.SetCellValue(sheet, fmt.Sprintf("%s1", col), header)
