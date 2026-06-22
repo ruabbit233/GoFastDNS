@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -216,6 +217,53 @@ func TestRunResolvePingMultiRoundStats(t *testing.T) {
 	}
 	if result.AvgPingRTT != 10*time.Millisecond {
 		t.Fatalf("expected avg ping 10ms, got %s", result.AvgPingRTT)
+	}
+}
+
+func TestRunResolvePingKeepsResolverTimeoutAsResultError(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.DNSServers = []string{"tls://dns.google"}
+	cfg.Domains = []string{"example.com"}
+	cfg.Benchmark.Rounds = 1
+	cfg.Benchmark.Warmup = 0
+	cfg.Concurrency.Servers = 1
+	cfg.Concurrency.Domains = 1
+	cfg.Concurrency.Pings = 1
+
+	timeoutErr := &net.OpError{
+		Op:  "dial",
+		Net: "tcp",
+		Err: os.ErrDeadlineExceeded,
+	}
+	resolver := func(ctx context.Context, server, domain string, attempts int, timeout time.Duration, options dns.ResolveOptions) dns.DNSResult {
+		return dns.DNSResult{
+			Server:          server,
+			Domain:          domain,
+			ResolutionError: timeoutErr,
+			QueryErrors:     []string{timeoutErr.Error()},
+			Answers:         []dns.Answer{},
+		}
+	}
+	pinger := func(ctx context.Context, ip string, options ping.Options) ping.PingResult {
+		t.Fatalf("pinger should not run when resolution fails")
+		return ping.PingResult{}
+	}
+
+	results, err := runResolvePingWithRunners(context.Background(), cfg, logDiscard(), resolver, pinger)
+	if err != nil {
+		t.Fatalf("unexpected run error: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected one server result, got %d", len(results))
+	}
+	if len(results[0].DomainResults) != 1 {
+		t.Fatalf("expected one domain result, got %d", len(results[0].DomainResults))
+	}
+	if !errors.Is(results[0].DomainResults[0].Error, os.ErrDeadlineExceeded) {
+		t.Fatalf("expected resolver timeout to stay on domain result, got %v", results[0].DomainResults[0].Error)
+	}
+	if results[0].DNSSuccessRate != 0 {
+		t.Fatalf("expected DNS success rate 0, got %.2f", results[0].DNSSuccessRate)
 	}
 }
 

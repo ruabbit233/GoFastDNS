@@ -16,7 +16,7 @@ concurrency:
   domains: 16 # 每个 DNS 服务器内的域名并发数
   pings: 32 # Ping 目标全局并发数
 geoip:
-  enabled: false # 开启后为解析 IP 和 Ping 目标标注地理位置与 ASN
+  enabled: true # 开启后为解析 IP 和 Ping 目标标注地理位置与 ASN
   provider: ip2location
   database_path: ./IP2LOCATION-LITE-DB11.BIN
   asn_database_path: ./IP2LOCATION-LITE-ASN.BIN
@@ -31,22 +31,16 @@ output:
   format: html # 可选: excel / html / json
   path: .
 dns_servers:
-  - "udp://211.64.142.4"
-  - "udp://211.64.142.5"
-  - "udp://211.64.142.6"
-  - "udp://211.64.142.7"
+  - "udp://123.123.123.123"
+  - "udp://119.29.29.29"
+  - "udp://223.5.5.5"
+  - "udp://180.76.76.76"
   - "udp://8.8.8.8"
-
-  - "tcp://211.64.142.4"
-  - "tcp://211.64.142.5"
-  - "tcp://211.64.142.6"
-  - "tcp://211.64.142.7"
-  - "tcp://8.8.8.8"
+  - "udp://114.114.114.114"
 
   - "tls://dns.alidns.com"
   - "tls://dns.pub"
   - "tls://dns.google"
-  - "tls://dot.360.cn"
 
   - "https://dns.google/dns-query"
   - "https://cloudflare-dns.com/dns-query"

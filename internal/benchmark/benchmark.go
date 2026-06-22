@@ -6,7 +6,6 @@ import (
 	"GoFastDNS/internal/geoip"
 	"GoFastDNS/internal/ping"
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -247,8 +246,8 @@ func runDNSPingWithRunnerAndGeoIP(ctx context.Context, cfg config.Config, logger
 
 			if result.Error != nil {
 				logger.Printf("DNS服务器：%s，Ping目标：%s，错误：%v\n", s, target, result.Error)
-				if errors.Is(result.Error, context.Canceled) || errors.Is(result.Error, context.DeadlineExceeded) {
-					recordError(errCh, result.Error)
+				if err := ctx.Err(); err != nil {
+					recordError(errCh, err)
 				}
 				return
 			}
@@ -321,8 +320,8 @@ func runResolveRound(ctx context.Context, cfg config.Config, server string, roun
 						server, domain, round, result.Answers, dnsPingResult.AvgRTT)
 				}
 			}
-			if isContextError(result.ResolutionError) || isContextError(dnsPingResult.Error) {
-				recordError(errCh, firstNonNil(result.ResolutionError, dnsPingResult.Error))
+			if err := ctx.Err(); err != nil {
+				recordError(errCh, err)
 			}
 
 			mu.Lock()
@@ -394,8 +393,8 @@ func runDNSPingTarget(ctx context.Context, result DNSPingBenchmarkResult, rounds
 		pingResult := pinger(ctx, target, options)
 		release(pingSem)
 		if round <= warmup {
-			if pingResult.Error != nil && isContextError(pingResult.Error) {
-				result.Error = pingResult.Error
+			if err := ctx.Err(); err != nil {
+				result.Error = err
 				return result
 			}
 			continue
@@ -411,9 +410,9 @@ func runDNSPingTarget(ctx context.Context, result DNSPingBenchmarkResult, rounds
 		roundResults = append(roundResults, roundResult)
 		if pingResult.Error != nil {
 			lastErr = pingResult.Error
-			if isContextError(pingResult.Error) {
+			if err := ctx.Err(); err != nil {
 				result.RoundResults = roundResults
-				result.Error = pingResult.Error
+				result.Error = err
 				return result
 			}
 			continue
@@ -478,19 +477,6 @@ func recordError(errCh chan<- error, err error) {
 	case errCh <- err:
 	default:
 	}
-}
-
-func firstNonNil(errors ...error) error {
-	for _, err := range errors {
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func isContextError(err error) bool {
-	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func SortResolvePingResults(results []BenchmarkResult) {
