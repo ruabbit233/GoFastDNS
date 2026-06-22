@@ -18,9 +18,20 @@ type resolvePingJSONReport struct {
 
 type resolvePingJSONSummaryRow struct {
 	Server              string  `json:"server"`
+	Rounds              int     `json:"rounds"`
+	Warmup              int     `json:"warmup"`
 	AvgResponseTimeMS   float64 `json:"avg_response_time_ms"`
+	MedianResponseMS    float64 `json:"median_response_time_ms"`
+	P95ResponseMS       float64 `json:"p95_response_time_ms"`
+	DNSJitterMS         float64 `json:"dns_jitter_ms"`
 	AvgPingRTTMS        float64 `json:"avg_ping_rtt_ms"`
-	SuccessRate         float64 `json:"success_rate"`
+	MedianPingRTTMS     float64 `json:"median_ping_rtt_ms"`
+	P95PingRTTMS        float64 `json:"p95_ping_rtt_ms"`
+	PingJitterMS        float64 `json:"ping_jitter_ms"`
+	Score               float64 `json:"score"`
+	DNSSuccessRate      float64 `json:"dns_success_rate"`
+	PingSuccessRate     float64 `json:"ping_success_rate"`
+	SuccessRate         float64 `json:"success_rate"` // backward-compatible alias for DNS success rate
 	TotalRetries        int     `json:"total_retries"`
 	DomainCount         int     `json:"domain_count"`
 	SuccessfulDNSCount  int     `json:"successful_dns_count"`
@@ -29,14 +40,32 @@ type resolvePingJSONSummaryRow struct {
 
 type resolvePingJSONResult struct {
 	Server            string             `json:"server"`
+	Rounds            int                `json:"rounds"`
+	Warmup            int                `json:"warmup"`
 	AvgResponseTimeMS float64            `json:"avg_response_time_ms"`
+	DNSStats          durationJSONStats  `json:"dns_stats"`
 	AvgPingRTTMS      float64            `json:"avg_ping_rtt_ms"`
-	SuccessRate       float64            `json:"success_rate"`
+	PingStats         durationJSONStats  `json:"ping_stats"`
+	Score             float64            `json:"score"`
+	DNSSuccessRate    float64            `json:"dns_success_rate"`
+	PingSuccessRate   float64            `json:"ping_success_rate"`
+	SuccessRate       float64            `json:"success_rate"` // backward-compatible alias for DNS success rate
 	TotalRetries      int                `json:"total_retries"`
 	Domains           []domainJSONResult `json:"domains"`
 }
 
+type durationJSONStats struct {
+	Count    int     `json:"count"`
+	MinMS    float64 `json:"min_ms"`
+	MaxMS    float64 `json:"max_ms"`
+	AvgMS    float64 `json:"avg_ms"`
+	MedianMS float64 `json:"median_ms"`
+	P95MS    float64 `json:"p95_ms"`
+	JitterMS float64 `json:"jitter_ms"`
+}
+
 type domainJSONResult struct {
+	Round          int                `json:"round,omitempty"`
 	Domain         string             `json:"domain"`
 	ResponseTimeMS float64            `json:"response_time_ms"`
 	RetryCount     int                `json:"retry_count"`
@@ -69,13 +98,31 @@ type dnsPingJSONReport struct {
 type dnsPingJSONSummary struct {
 	TargetCount      int     `json:"target_count"`
 	SuccessfulCount  int     `json:"successful_count"`
+	SuccessRate      float64 `json:"success_rate"`
 	AvgRTTMS         float64 `json:"avg_rtt_ms"`
+	MedianRTTMS      float64 `json:"median_rtt_ms"`
+	P95RTTMS         float64 `json:"p95_rtt_ms"`
+	JitterMS         float64 `json:"jitter_ms"`
 	AvgPacketLossPct float64 `json:"avg_packet_loss_percent"`
 }
 
 type dnsPingJSONResult struct {
-	Server      string  `json:"server"`
-	Target      string  `json:"target"`
+	Server       string                   `json:"server"`
+	Target       string                   `json:"target"`
+	Rounds       int                      `json:"rounds"`
+	Warmup       int                      `json:"warmup"`
+	RTTMS        float64                  `json:"rtt_ms"`
+	Stats        durationJSONStats        `json:"stats"`
+	PacketLoss   float64                  `json:"packet_loss"`
+	PacketsSent  int                      `json:"packets_sent"`
+	SuccessRate  float64                  `json:"success_rate"`
+	Score        float64                  `json:"score"`
+	Error        string                   `json:"error,omitempty"`
+	RoundResults []dnsPingRoundJSONResult `json:"round_results"`
+}
+
+type dnsPingRoundJSONResult struct {
+	Round       int     `json:"round"`
 	RTTMS       float64 `json:"rtt_ms"`
 	PacketLoss  float64 `json:"packet_loss"`
 	PacketsSent int     `json:"packets_sent"`
@@ -132,8 +179,19 @@ func buildResolvePingJSONSummary(results []BenchmarkResult) []resolvePingJSONSum
 	for _, result := range results {
 		row := resolvePingJSONSummaryRow{
 			Server:            result.Server,
+			Rounds:            result.Rounds,
+			Warmup:            result.Warmup,
 			AvgResponseTimeMS: durationMS(result.AvgResponseTime),
+			MedianResponseMS:  durationMS(result.DNSStats.Median),
+			P95ResponseMS:     durationMS(result.DNSStats.P95),
+			DNSJitterMS:       durationMS(result.DNSStats.Jitter),
 			AvgPingRTTMS:      durationMS(result.AvgPingRTT),
+			MedianPingRTTMS:   durationMS(result.PingStats.Median),
+			P95PingRTTMS:      durationMS(result.PingStats.P95),
+			PingJitterMS:      durationMS(result.PingStats.Jitter),
+			Score:             result.Score,
+			DNSSuccessRate:    result.DNSSuccessRate,
+			PingSuccessRate:   result.PingSuccessRate,
 			SuccessRate:       result.SuccessRate,
 			TotalRetries:      result.TotalRetries,
 			DomainCount:       len(result.DomainResults),
@@ -156,8 +214,15 @@ func buildResolvePingJSONResults(results []BenchmarkResult) []resolvePingJSONRes
 	for _, result := range results {
 		row := resolvePingJSONResult{
 			Server:            result.Server,
+			Rounds:            result.Rounds,
+			Warmup:            result.Warmup,
 			AvgResponseTimeMS: durationMS(result.AvgResponseTime),
+			DNSStats:          buildDurationJSONStats(result.DNSStats),
 			AvgPingRTTMS:      durationMS(result.AvgPingRTT),
+			PingStats:         buildDurationJSONStats(result.PingStats),
+			Score:             result.Score,
+			DNSSuccessRate:    result.DNSSuccessRate,
+			PingSuccessRate:   result.PingSuccessRate,
 			SuccessRate:       result.SuccessRate,
 			TotalRetries:      result.TotalRetries,
 			Domains:           buildDomainJSONResults(result.DomainResults),
@@ -171,6 +236,7 @@ func buildDomainJSONResults(results []DomainResult) []domainJSONResult {
 	rows := make([]domainJSONResult, 0, len(results))
 	for _, result := range results {
 		row := domainJSONResult{
+			Round:          result.Round,
 			Domain:         result.Domain,
 			ResponseTimeMS: durationMS(result.ResponseTime),
 			RetryCount:     result.RetryCount,
@@ -191,6 +257,18 @@ func buildDomainJSONResults(results []DomainResult) []domainJSONResult {
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+func buildDurationJSONStats(stats DurationStats) durationJSONStats {
+	return durationJSONStats{
+		Count:    stats.Count,
+		MinMS:    durationMS(stats.Min),
+		MaxMS:    durationMS(stats.Max),
+		AvgMS:    durationMS(stats.Avg),
+		MedianMS: durationMS(stats.Median),
+		P95MS:    durationMS(stats.P95),
+		JitterMS: durationMS(stats.Jitter),
+	}
 }
 
 func emptyAnswersAsSlice(answers []dns.Answer) []dns.Answer {
@@ -224,6 +302,7 @@ func buildDNSPingJSONSummary(results []DNSPingBenchmarkResult) dnsPingJSONSummar
 	var totalRTT time.Duration
 	var totalLoss float64
 	var successful int
+	var rtts []time.Duration
 	for _, result := range results {
 		if result.Error != nil {
 			continue
@@ -231,11 +310,19 @@ func buildDNSPingJSONSummary(results []DNSPingBenchmarkResult) dnsPingJSONSummar
 		successful++
 		totalRTT += result.RTT
 		totalLoss += result.PacketLoss
+		if result.RTT > 0 {
+			rtts = append(rtts, result.RTT)
+		}
 	}
 
+	stats := calculateDurationStats(rtts)
 	summary := dnsPingJSONSummary{
 		TargetCount:     len(results),
 		SuccessfulCount: successful,
+		SuccessRate:     ratio(successful, len(results)),
+		MedianRTTMS:     durationMS(stats.Median),
+		P95RTTMS:        durationMS(stats.P95),
+		JitterMS:        durationMS(stats.Jitter),
 	}
 	if successful > 0 {
 		summary.AvgRTTMS = durationMS(totalRTT / time.Duration(successful))
@@ -248,8 +335,34 @@ func buildDNSPingJSONResults(results []DNSPingBenchmarkResult) []dnsPingJSONResu
 	rows := make([]dnsPingJSONResult, 0, len(results))
 	for _, result := range results {
 		row := dnsPingJSONResult{
-			Server:      result.Server,
-			Target:      result.Target,
+			Server:       result.Server,
+			Target:       result.Target,
+			Rounds:       result.Rounds,
+			Warmup:       result.Warmup,
+			RTTMS:        durationMS(result.RTT),
+			Stats:        buildDurationJSONStats(result.Stats),
+			PacketLoss:   result.PacketLoss,
+			PacketsSent:  result.PacketsSent,
+			SuccessRate:  result.SuccessRate,
+			Score:        result.Score,
+			RoundResults: buildDNSPingRoundJSONResults(result.RoundResults),
+		}
+		if result.Error != nil {
+			row.Error = result.Error.Error()
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+func buildDNSPingRoundJSONResults(results []DNSPingRoundResult) []dnsPingRoundJSONResult {
+	if results == nil {
+		return []dnsPingRoundJSONResult{}
+	}
+	rows := make([]dnsPingRoundJSONResult, 0, len(results))
+	for _, result := range results {
+		row := dnsPingRoundJSONResult{
+			Round:       result.Round,
 			RTTMS:       durationMS(result.RTT),
 			PacketLoss:  result.PacketLoss,
 			PacketsSent: result.PacketsSent,

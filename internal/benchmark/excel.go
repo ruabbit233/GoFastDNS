@@ -17,8 +17,7 @@ func SaveResultsToExcel(servers []string, results []BenchmarkResult, outputPath 
 	f.SetSheetName("Sheet1", sheet)
 
 	// 计算每个服务器结果需要的列数
-	// 每个服务器占用4列（域名、响应时间、重试次数、错误信息）
-	columnsPerServer := 8
+	columnsPerServer := 9
 
 	// 写入标题行
 	for i, result := range results {
@@ -30,38 +29,46 @@ func SaveResultsToExcel(servers []string, results []BenchmarkResult, outputPath 
 			fmt.Sprintf("DNS服务器 #%d: %s", i+1, result.Server))
 
 		// 写入汇总信息表头
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", serverCol), "平均响应时间(ms)")
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+1)), "成功率(%)")
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+2)), "重试次数")
-		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+3)), "解析IP平均延迟(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", serverCol), "综合分")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+1)), "DNS平均(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+2)), "DNS p50(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+3)), "DNS p95(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+4)), "Ping平均(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+5)), "Ping p50(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+6)), "Ping p95(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+7)), "DNS成功率(%)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s2", getColumnName(baseCol+8)), "Ping成功率(%)")
 
 		// 写入汇总数据
-		f.SetCellValue(sheet, fmt.Sprintf("%s3", serverCol),
-			float64(result.AvgResponseTime.Milliseconds()))
-		f.SetCellValue(sheet, fmt.Sprintf("%s3", getColumnName(baseCol+1)),
-			result.SuccessRate*100)
-		f.SetCellValue(sheet, fmt.Sprintf("%s3", getColumnName(baseCol+2)),
-			result.TotalRetries)
-		f.SetCellValue(sheet, fmt.Sprintf("%s3", getColumnName(baseCol+3)),
-			float64(result.AvgPingRTT.Milliseconds()))
+		f.SetCellValue(sheet, fmt.Sprintf("%s3", serverCol), result.Score)
+		f.SetCellValue(sheet, fmt.Sprintf("%s3", getColumnName(baseCol+1)), durationMS(result.AvgResponseTime))
+		f.SetCellValue(sheet, fmt.Sprintf("%s3", getColumnName(baseCol+2)), durationMS(result.DNSStats.Median))
+		f.SetCellValue(sheet, fmt.Sprintf("%s3", getColumnName(baseCol+3)), durationMS(result.DNSStats.P95))
+		f.SetCellValue(sheet, fmt.Sprintf("%s3", getColumnName(baseCol+4)), durationMS(result.AvgPingRTT))
+		f.SetCellValue(sheet, fmt.Sprintf("%s3", getColumnName(baseCol+5)), durationMS(result.PingStats.Median))
+		f.SetCellValue(sheet, fmt.Sprintf("%s3", getColumnName(baseCol+6)), durationMS(result.PingStats.P95))
+		f.SetCellValue(sheet, fmt.Sprintf("%s3", getColumnName(baseCol+7)), result.DNSSuccessRate*100)
+		f.SetCellValue(sheet, fmt.Sprintf("%s3", getColumnName(baseCol+8)), result.PingSuccessRate*100)
 
 		// 写入详情表头
-		f.SetCellValue(sheet, fmt.Sprintf("%s5", serverCol), "域名")
-		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+1)), "响应时间(ms)")
-		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+2)), "重试次数")
-		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+3)), "错误信息")
-		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+4)), "解析结果")
-		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+5)), "Ping目标")
-		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+6)), "平均延迟(ms)")
-		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+7)), "Ping错误")
+		f.SetCellValue(sheet, fmt.Sprintf("%s5", serverCol), "轮次")
+		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+1)), "域名")
+		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+2)), "响应时间(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+3)), "重试次数")
+		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+4)), "错误信息")
+		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+5)), "解析结果")
+		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+6)), "Ping目标")
+		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+7)), "平均延迟(ms)")
+		f.SetCellValue(sheet, fmt.Sprintf("%s5", getColumnName(baseCol+8)), "Ping错误")
 
 		// 写入域名测试详情
 		for rowIdx, domain := range result.DomainResults {
-			f.SetCellValue(sheet, fmt.Sprintf("%s%d", serverCol, rowIdx+6),
-				domain.Domain)
+			f.SetCellValue(sheet, fmt.Sprintf("%s%d", serverCol, rowIdx+6), domain.Round)
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+1), rowIdx+6),
-				float64(domain.ResponseTime.Milliseconds()))
+				domain.Domain)
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+2), rowIdx+6),
+				durationMS(domain.ResponseTime))
+			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+3), rowIdx+6),
 				domain.RetryCount)
 			errorMessages := make([]string, 0)
 			if domain.Error != nil {
@@ -71,18 +78,18 @@ func SaveResultsToExcel(servers []string, results []BenchmarkResult, outputPath 
 				errorMessages = append(errorMessages, "无可 Ping 的 A/AAAA 记录")
 			}
 			if len(errorMessages) > 0 {
-				f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+3), rowIdx+6),
+				f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+4), rowIdx+6),
 					strings.Join(errorMessages, "\n"))
 			}
-			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+4), rowIdx+6),
-				strings.Join(answerLabels(domain.Answers), "\n"))
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+5), rowIdx+6),
-				pingTargets(domain.DnsPingResults.PingResults))
+				strings.Join(answerLabels(domain.Answers), "\n"))
 			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+6), rowIdx+6),
-				float64(domain.DnsPingResults.AvgRTT.Milliseconds()))
+				pingTargets(domain.DnsPingResults.PingResults))
+			f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+7), rowIdx+6),
+				durationMS(domain.DnsPingResults.AvgRTT))
 			pingErrors := pingErrorMessages(domain.DnsPingResults.PingResults)
 			if len(pingErrors) > 0 {
-				f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+7), rowIdx+6), pingErrors)
+				f.SetCellValue(sheet, fmt.Sprintf("%s%d", getColumnName(baseCol+8), rowIdx+6), pingErrors)
 			}
 		}
 
@@ -90,7 +97,7 @@ func SaveResultsToExcel(servers []string, results []BenchmarkResult, outputPath 
 		for j := 0; j < columnsPerServer; j++ {
 			col := getColumnName(baseCol + j)
 			width := 15.0
-			if j == 0 { // 域名列
+			if j == 1 { // 域名列
 				width = 40.0
 			}
 			f.SetColWidth(sheet, col, col, width)
@@ -132,7 +139,7 @@ func SaveDNSPingResultsToExcel(results []DNSPingBenchmarkResult, outputPath stri
 	sheet := "DNS Ping测试结果"
 	f.SetSheetName("Sheet1", sheet)
 
-	headers := []string{"排名", "DNS服务器", "Ping目标", "平均延迟(ms)", "丢包率(%)", "发送包数", "错误信息"}
+	headers := []string{"排名", "DNS服务器", "Ping目标", "综合分", "平均延迟(ms)", "p50(ms)", "p95(ms)", "成功率(%)", "丢包率(%)", "发送包数", "错误信息"}
 	for i, header := range headers {
 		col := getColumnName(i)
 		f.SetCellValue(sheet, fmt.Sprintf("%s1", col), header)
@@ -145,11 +152,15 @@ func SaveDNSPingResultsToExcel(results []DNSPingBenchmarkResult, outputPath stri
 		f.SetCellValue(sheet, fmt.Sprintf("A%d", row), i+1)
 		f.SetCellValue(sheet, fmt.Sprintf("B%d", row), result.Server)
 		f.SetCellValue(sheet, fmt.Sprintf("C%d", row), result.Target)
-		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), float64(result.RTT.Milliseconds()))
-		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), result.PacketLoss*100)
-		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), result.PacketsSent)
+		f.SetCellValue(sheet, fmt.Sprintf("D%d", row), result.Score)
+		f.SetCellValue(sheet, fmt.Sprintf("E%d", row), durationMS(result.RTT))
+		f.SetCellValue(sheet, fmt.Sprintf("F%d", row), durationMS(result.Stats.Median))
+		f.SetCellValue(sheet, fmt.Sprintf("G%d", row), durationMS(result.Stats.P95))
+		f.SetCellValue(sheet, fmt.Sprintf("H%d", row), result.SuccessRate*100)
+		f.SetCellValue(sheet, fmt.Sprintf("I%d", row), result.PacketLoss*100)
+		f.SetCellValue(sheet, fmt.Sprintf("J%d", row), result.PacketsSent)
 		if result.Error != nil {
-			f.SetCellValue(sheet, fmt.Sprintf("G%d", row), result.Error.Error())
+			f.SetCellValue(sheet, fmt.Sprintf("K%d", row), result.Error.Error())
 		}
 	}
 

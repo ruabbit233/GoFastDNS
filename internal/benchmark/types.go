@@ -7,6 +7,7 @@ import (
 )
 
 type DomainResult struct {
+	Round          int
 	Domain         string
 	Answers        []dns.Answer
 	ResponseCodes  []dns.ResponseCode
@@ -18,20 +19,51 @@ type DomainResult struct {
 	DnsPingResults ping.DNSPingResult // 新增字段
 }
 
+type DurationStats struct {
+	Count  int
+	Min    time.Duration
+	Max    time.Duration
+	Avg    time.Duration
+	Median time.Duration
+	P95    time.Duration
+	Jitter time.Duration
+}
+
 type BenchmarkResult struct {
 	Server          string
+	Rounds          int
+	Warmup          int
 	AvgResponseTime time.Duration
 	DomainResults   []DomainResult
 	SuccessRate     float64
+	DNSSuccessRate  float64
+	PingSuccessRate float64
 	TotalRetries    int
 	AvgPingRTT      time.Duration
+	DNSStats        DurationStats
+	PingStats       DurationStats
+	Score           float64
 }
 
-type DNSPingBenchmarkResult struct {
-	Server      string
-	Target      string
+type DNSPingRoundResult struct {
+	Round       int
 	RTT         time.Duration
 	PacketLoss  float64
 	PacketsSent int
 	Error       error
+}
+
+type DNSPingBenchmarkResult struct {
+	Server       string
+	Target       string
+	Rounds       int
+	Warmup       int
+	RTT          time.Duration
+	PacketLoss   float64
+	PacketsSent  int
+	Stats        DurationStats
+	SuccessRate  float64
+	Score        float64
+	RoundResults []DNSPingRoundResult
+	Error        error
 }

@@ -4,6 +4,17 @@ timeout: 1s # DNS 查询超时时间
 dns:
   record_types:
     - A # 可选: A / AAAA；默认只查 A 记录，保持旧行为
+benchmark:
+  rounds: 3 # 正式测试轮数；1 接近旧版单轮行为
+  warmup: 1 # 预热轮数，不计入统计
+  score:
+    dns_weight: 0.3
+    ping_weight: 0.6
+    success_weight: 0.1
+concurrency:
+  servers: 4 # DNS 服务器并发数
+  domains: 16 # 每个 DNS 服务器内的域名并发数
+  pings: 32 # Ping 目标全局并发数
 ping:
   count: 3
   interval: 100ms

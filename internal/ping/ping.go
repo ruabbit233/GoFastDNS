@@ -1,6 +1,7 @@
 package ping
 
 import (
+	"context"
 	"net"
 	"strings"
 	"time"
@@ -21,6 +22,10 @@ func PingIP(ip string) PingResult {
 }
 
 func PingIPWithOptions(ip string, options Options) PingResult {
+	return PingIPWithOptionsContext(context.Background(), ip, options)
+}
+
+func PingIPWithOptionsContext(ctx context.Context, ip string, options Options) PingResult {
 	options = applyDefaults(options)
 
 	pinger, err := probing.NewPinger(ip)
@@ -35,7 +40,7 @@ func PingIPWithOptions(ip string, options Options) PingResult {
 	pinger.Interval = options.Interval
 	pinger.Timeout = options.Timeout
 
-	err = pinger.Run()
+	err = pinger.RunWithContext(ctx)
 	if err != nil {
 		return PingResult{
 			IP:    ip,
@@ -57,6 +62,14 @@ func PingDNSResult(result dns.DNSResult) DNSPingResult {
 }
 
 func PingDNSResultWithOptions(result dns.DNSResult, options Options) DNSPingResult {
+	return PingDNSResultWithOptionsContext(context.Background(), result, options)
+}
+
+func PingDNSResultWithOptionsContext(ctx context.Context, result dns.DNSResult, options Options) DNSPingResult {
+	return PingDNSResultWithOptionsAndRunner(ctx, result, options, PingIPWithOptionsContext)
+}
+
+func PingDNSResultWithOptionsAndRunner(ctx context.Context, result dns.DNSResult, options Options, runner func(context.Context, string, Options) PingResult) DNSPingResult {
 	if result.ResolutionError != nil {
 		return DNSPingResult{
 			Domain:    result.Domain,
@@ -71,7 +84,16 @@ func PingDNSResultWithOptions(result dns.DNSResult, options Options) DNSPingResu
 	successfulPings := 0
 
 	for _, ip := range targets {
-		pingResult := PingIPWithOptions(ip, options)
+		if err := ctx.Err(); err != nil {
+			return DNSPingResult{
+				Domain:      result.Domain,
+				DNSServer:   result.Server,
+				PingResults: pingResults,
+				AvgRTT:      averageRTT(totalRTT, successfulPings),
+				Error:       err,
+			}
+		}
+		pingResult := runner(ctx, ip, options)
 		pingResults = append(pingResults, pingResult)
 
 		// 只计算成功的 ping 结果
@@ -82,10 +104,7 @@ func PingDNSResultWithOptions(result dns.DNSResult, options Options) DNSPingResu
 	}
 
 	// 计算平均 RTT
-	var avgRTT time.Duration
-	if successfulPings > 0 {
-		avgRTT = totalRTT / time.Duration(successfulPings)
-	}
+	avgRTT := averageRTT(totalRTT, successfulPings)
 
 	dnsPingResult := DNSPingResult{
 		Domain:      result.Domain,
@@ -97,6 +116,13 @@ func PingDNSResultWithOptions(result dns.DNSResult, options Options) DNSPingResu
 		dnsPingResult.Error = pingResults[0].Error
 	}
 	return dnsPingResult
+}
+
+func averageRTT(totalRTT time.Duration, successfulPings int) time.Duration {
+	if successfulPings == 0 {
+		return 0
+	}
+	return totalRTT / time.Duration(successfulPings)
 }
 
 func applyDefaults(options Options) Options {

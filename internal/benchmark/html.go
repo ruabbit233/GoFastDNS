@@ -18,11 +18,21 @@ type htmlReport struct {
 type resolveHTMLRow struct {
 	Rank            int
 	Server          string
+	Rounds          int
 	AvgDNS          string
+	MedianDNS       string
+	P95DNS          string
+	DNSJitter       string
 	AvgDNSMS        int64
 	AvgPing         string
+	MedianPing      string
+	P95Ping         string
+	PingJitter      string
 	AvgPingMS       int64
 	SuccessRate     string
+	DNSSuccessRate  string
+	PingSuccessRate string
+	Score           string
 	SuccessRatePct  float64
 	TotalRetries    int
 	DNSBarWidth     float64
@@ -32,6 +42,7 @@ type resolveHTMLRow struct {
 }
 
 type domainHTMLRow struct {
+	Round        int
 	Domain       string
 	ResponseTime string
 	Retries      int
@@ -47,12 +58,18 @@ type dnsPingHTMLRow struct {
 	Rank         int
 	Server       string
 	Target       string
+	Rounds       int
 	RTT          string
+	MedianRTT    string
+	P95RTT       string
+	Jitter       string
 	RTTMS        int64
 	RTTBarWidth  float64
 	PacketLoss   string
 	LossBarWidth float64
 	PacketsSent  int
+	SuccessRate  string
+	Score        string
 	Error        string
 }
 
@@ -112,11 +129,21 @@ func buildResolveHTMLRows(results []BenchmarkResult) []resolveHTMLRow {
 		row := resolveHTMLRow{
 			Rank:            i + 1,
 			Server:          result.Server,
+			Rounds:          result.Rounds,
 			AvgDNS:          formatDuration(result.AvgResponseTime),
+			MedianDNS:       formatDuration(result.DNSStats.Median),
+			P95DNS:          formatDuration(result.DNSStats.P95),
+			DNSJitter:       formatDuration(result.DNSStats.Jitter),
 			AvgDNSMS:        avgDNSMS,
 			AvgPing:         formatDuration(result.AvgPingRTT),
+			MedianPing:      formatDuration(result.PingStats.Median),
+			P95Ping:         formatDuration(result.PingStats.P95),
+			PingJitter:      formatDuration(result.PingStats.Jitter),
 			AvgPingMS:       avgPingMS,
 			SuccessRate:     formatPercent(result.SuccessRate),
+			DNSSuccessRate:  formatPercent(result.DNSSuccessRate),
+			PingSuccessRate: formatPercent(result.PingSuccessRate),
+			Score:           formatScore(result.Score),
 			SuccessRatePct:  result.SuccessRate * 100,
 			TotalRetries:    result.TotalRetries,
 			DNSBarWidth:     inverseBarWidth(avgDNSMS, maxDNS),
@@ -133,6 +160,7 @@ func buildDomainHTMLRows(results []DomainResult) []domainHTMLRow {
 	rows := make([]domainHTMLRow, 0, len(results))
 	for _, result := range results {
 		row := domainHTMLRow{
+			Round:        result.Round,
 			Domain:       result.Domain,
 			ResponseTime: formatDuration(result.ResponseTime),
 			Retries:      result.RetryCount,
@@ -160,12 +188,18 @@ func buildDNSPingHTMLRows(results []DNSPingBenchmarkResult) []dnsPingHTMLRow {
 			Rank:         i + 1,
 			Server:       result.Server,
 			Target:       result.Target,
+			Rounds:       result.Rounds,
 			RTT:          formatDuration(result.RTT),
+			MedianRTT:    formatDuration(result.Stats.Median),
+			P95RTT:       formatDuration(result.Stats.P95),
+			Jitter:       formatDuration(result.Stats.Jitter),
 			RTTMS:        rttMS,
 			RTTBarWidth:  inverseBarWidth(rttMS, maxRTT),
 			PacketLoss:   formatPercentValue(result.PacketLoss),
 			LossBarWidth: clampPercent(result.PacketLoss),
 			PacketsSent:  result.PacketsSent,
+			SuccessRate:  formatPercent(result.SuccessRate),
+			Score:        formatScore(result.Score),
 		}
 		if result.Error != nil {
 			row.Error = result.Error.Error()
@@ -248,6 +282,13 @@ func formatPercent(value float64) string {
 
 func formatPercentValue(value float64) string {
 	return fmt.Sprintf("%.1f%%", value)
+}
+
+func formatScore(value float64) string {
+	if value <= 0 {
+		return "-"
+	}
+	return fmt.Sprintf("%.1f", value)
 }
 
 func formatBarWidth(value float64) template.CSS {
@@ -500,18 +541,34 @@ tr:last-child td { border-bottom: 0; }
             <div class="bar"><div class="fill ping" style="--w: {{formatBarWidth .PingBarWidth}}"></div></div>
           </div>
           <div class="metric">
+            <span>Ping p50 / p95</span>
+            <strong>{{.MedianPing}} / {{.P95Ping}}</strong>
+          </div>
+          <div class="metric">
             <span>DNS 平均响应</span>
             <strong>{{.AvgDNS}}</strong>
             <div class="bar"><div class="fill" style="--w: {{formatBarWidth .DNSBarWidth}}"></div></div>
           </div>
           <div class="metric">
-            <span>成功率</span>
-            <strong>{{.SuccessRate}}</strong>
+            <span>DNS p50 / p95</span>
+            <strong>{{.MedianDNS}} / {{.P95DNS}}</strong>
+          </div>
+          <div class="metric">
+            <span>DNS / Ping 成功率</span>
+            <strong>{{.DNSSuccessRate}} / {{.PingSuccessRate}}</strong>
             <div class="bar"><div class="fill success" style="--w: {{formatBarWidth .SuccessBarWidth}}"></div></div>
+          </div>
+          <div class="metric">
+            <span>综合分</span>
+            <strong>{{.Score}}</strong>
           </div>
           <div class="metric">
             <span>总重试次数</span>
             <strong>{{.TotalRetries}}</strong>
+          </div>
+          <div class="metric">
+            <span>正式轮数</span>
+            <strong>{{.Rounds}}</strong>
           </div>
         </div>
       </article>
@@ -527,9 +584,13 @@ tr:last-child td { border-bottom: 0; }
           <tr>
             <th>排名</th>
             <th>DNS 服务器</th>
+            <th class="num">综合分</th>
             <th class="num">解析 IP 平均延迟</th>
+            <th class="num">Ping p50 / p95</th>
             <th class="num">DNS 平均响应</th>
-            <th class="num">成功率</th>
+            <th class="num">DNS p50 / p95</th>
+            <th class="num">DNS 成功率</th>
+            <th class="num">Ping 成功率</th>
             <th class="num">总重试</th>
           </tr>
         </thead>
@@ -538,9 +599,13 @@ tr:last-child td { border-bottom: 0; }
           <tr>
             <td>#{{.Rank}}</td>
             <td>{{.Server}}</td>
+            <td class="num">{{.Score}}</td>
             <td class="num">{{.AvgPing}}</td>
+            <td class="num">{{.MedianPing}} / {{.P95Ping}}</td>
             <td class="num">{{.AvgDNS}}</td>
-            <td class="num">{{.SuccessRate}}</td>
+            <td class="num">{{.MedianDNS}} / {{.P95DNS}}</td>
+            <td class="num">{{.DNSSuccessRate}}</td>
+            <td class="num">{{.PingSuccessRate}}</td>
             <td class="num">{{.TotalRetries}}</td>
           </tr>
           {{end}}
@@ -563,6 +628,7 @@ tr:last-child td { border-bottom: 0; }
             <thead>
               <tr>
                 <th>域名</th>
+                <th class="num">轮次</th>
                 <th class="num">DNS 响应</th>
                 <th class="num">重试</th>
                 <th>解析结果</th>
@@ -575,6 +641,7 @@ tr:last-child td { border-bottom: 0; }
               {{range .DomainRows}}
               <tr>
                 <td>{{.Domain}}</td>
+                <td class="num">{{.Round}}</td>
                 <td class="num">{{.ResponseTime}}</td>
                 <td class="num">{{.Retries}}</td>
                 <td>
@@ -627,13 +694,25 @@ tr:last-child td { border-bottom: 0; }
             <div class="bar"><div class="fill ping" style="--w: {{formatBarWidth .RTTBarWidth}}"></div></div>
           </div>
           <div class="metric">
+            <span>p50 / p95</span>
+            <strong>{{.MedianRTT}} / {{.P95RTT}}</strong>
+          </div>
+          <div class="metric">
             <span>丢包率</span>
             <strong>{{.PacketLoss}}</strong>
             <div class="bar"><div class="fill loss" style="--w: {{formatBarWidth .LossBarWidth}}"></div></div>
           </div>
           <div class="metric">
+            <span>成功率 / 综合分</span>
+            <strong>{{.SuccessRate}} / {{.Score}}</strong>
+          </div>
+          <div class="metric">
             <span>发送包数</span>
             <strong>{{.PacketsSent}}</strong>
+          </div>
+          <div class="metric">
+            <span>正式轮数</span>
+            <strong>{{.Rounds}}</strong>
           </div>
           {{if .Error}}<div class="error">{{.Error}}</div>{{else}}<div class="status-ok">正常</div>{{end}}
         </div>
@@ -651,7 +730,10 @@ tr:last-child td { border-bottom: 0; }
             <th>排名</th>
             <th>DNS 服务器</th>
             <th>Ping 目标</th>
+            <th class="num">综合分</th>
             <th class="num">平均延迟</th>
+            <th class="num">p50 / p95</th>
+            <th class="num">成功率</th>
             <th class="num">丢包率</th>
             <th class="num">发送包数</th>
             <th>错误</th>
@@ -663,7 +745,10 @@ tr:last-child td { border-bottom: 0; }
             <td>#{{.Rank}}</td>
             <td>{{.Server}}</td>
             <td>{{.Target}}</td>
+            <td class="num">{{.Score}}</td>
             <td class="num">{{.RTT}}</td>
+            <td class="num">{{.MedianRTT}} / {{.P95RTT}}</td>
+            <td class="num">{{.SuccessRate}}</td>
             <td class="num">{{.PacketLoss}}</td>
             <td class="num">{{.PacketsSent}}</td>
             <td>{{if .Error}}<span class="error">{{.Error}}</span>{{else}}<span class="status-ok">正常</span>{{end}}</td>

@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"context"
 	"time"
 )
 
@@ -53,7 +54,7 @@ type DNSResult struct {
 }
 
 type Resolver interface {
-	Resolve(domain string, timeout time.Duration, options ResolveOptions) DNSResult
+	Resolve(ctx context.Context, domain string, timeout time.Duration, options ResolveOptions) DNSResult
 }
 
 type UDPResolver struct {

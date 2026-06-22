@@ -3,13 +3,16 @@ package cli
 import (
 	"GoFastDNS/internal/benchmark"
 	"GoFastDNS/internal/config"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -28,6 +31,14 @@ type flagOptions struct {
 	pingPriv    bool
 	ipSelect    string
 	ipFamily    string
+	rounds      int
+	warmup      int
+	dnsWeight   float64
+	pingWeight  float64
+	succWeight  float64
+	concServers int
+	concDomains int
+	concPings   int
 	outputPath  string
 	outputFmt   string
 }
@@ -61,7 +72,10 @@ func RunWithWriters(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	filename, err := benchmark.Run(cfg, logger)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	filename, err := benchmark.RunContext(ctx, cfg, logger)
 	if err != nil {
 		fmt.Fprintf(stderr, "运行失败: %v\n", err)
 		return 1
@@ -103,6 +117,14 @@ func parseFlags(args []string, output io.Writer) (flagOptions, error) {
 	fs.BoolVar(&opts.pingPriv, "ping-privileged", false, "使用特权 raw ICMP ping")
 	fs.StringVar(&opts.ipSelect, "ip-selection", "", "解析 IP 的 ping 目标选择策略: all 或 first")
 	fs.StringVar(&opts.ipFamily, "ip-family", "", "Ping IP family: ipv4、ipv6 或 dual")
+	fs.IntVar(&opts.rounds, "rounds", -1, "正式 benchmark 轮数")
+	fs.IntVar(&opts.warmup, "warmup", -1, "不计入统计的预热轮数")
+	fs.Float64Var(&opts.dnsWeight, "score-dns-weight", -1, "综合评分 DNS 延迟权重")
+	fs.Float64Var(&opts.pingWeight, "score-ping-weight", -1, "综合评分 Ping 延迟权重")
+	fs.Float64Var(&opts.succWeight, "score-success-weight", -1, "综合评分成功率权重")
+	fs.IntVar(&opts.concServers, "concurrency-servers", -1, "DNS 服务器并发数")
+	fs.IntVar(&opts.concDomains, "concurrency-domains", -1, "每个 DNS 服务器内域名并发数")
+	fs.IntVar(&opts.concPings, "concurrency-pings", -1, "Ping 目标全局并发数")
 	fs.StringVar(&opts.outputPath, "output", "", "输出目录或文件路径")
 	fs.StringVar(&opts.outputFmt, "output-format", "", "输出格式，目前支持 excel、html 或 json")
 
@@ -147,6 +169,30 @@ func applyFlagOverrides(cfg *config.Config, opts flagOptions) {
 	}
 	if opts.ipFamily != "" {
 		cfg.Ping.IPFamily = opts.ipFamily
+	}
+	if flagWasSet(opts.rawFlags, "rounds") {
+		cfg.Benchmark.Rounds = opts.rounds
+	}
+	if flagWasSet(opts.rawFlags, "warmup") {
+		cfg.Benchmark.Warmup = opts.warmup
+	}
+	if flagWasSet(opts.rawFlags, "score-dns-weight") {
+		cfg.Benchmark.Score.DNSWeight = opts.dnsWeight
+	}
+	if flagWasSet(opts.rawFlags, "score-ping-weight") {
+		cfg.Benchmark.Score.PingWeight = opts.pingWeight
+	}
+	if flagWasSet(opts.rawFlags, "score-success-weight") {
+		cfg.Benchmark.Score.SuccessWeight = opts.succWeight
+	}
+	if flagWasSet(opts.rawFlags, "concurrency-servers") {
+		cfg.Concurrency.Servers = opts.concServers
+	}
+	if flagWasSet(opts.rawFlags, "concurrency-domains") {
+		cfg.Concurrency.Domains = opts.concDomains
+	}
+	if flagWasSet(opts.rawFlags, "concurrency-pings") {
+		cfg.Concurrency.Pings = opts.concPings
 	}
 	if opts.outputPath != "" {
 		cfg.Output.Path = opts.outputPath

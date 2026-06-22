@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -36,6 +38,15 @@ func TestApplyDefaults(t *testing.T) {
 	}
 	if len(cfg.DNS.RecordTypes) != 1 || cfg.DNS.RecordTypes[0] != "A" {
 		t.Fatalf("expected default record types=[A], got %#v", cfg.DNS.RecordTypes)
+	}
+	if cfg.Benchmark.Rounds != 1 || cfg.Benchmark.Warmup != 0 {
+		t.Fatalf("expected benchmark rounds=1 warmup=0, got rounds=%d warmup=%d", cfg.Benchmark.Rounds, cfg.Benchmark.Warmup)
+	}
+	if cfg.Benchmark.Score.DNSWeight != 0.3 || cfg.Benchmark.Score.PingWeight != 0.6 || cfg.Benchmark.Score.SuccessWeight != 0.1 {
+		t.Fatalf("unexpected default score weights: %#v", cfg.Benchmark.Score)
+	}
+	if cfg.Concurrency.Servers != 4 || cfg.Concurrency.Domains != 16 || cfg.Concurrency.Pings != 32 {
+		t.Fatalf("unexpected default concurrency: %#v", cfg.Concurrency)
 	}
 }
 
@@ -118,5 +129,71 @@ func TestValidateRequiresDomainsOnlyForResolvePing(t *testing.T) {
 	cfg.Mode = ModeResolvePing
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected resolve-ping without domains to be invalid")
+	}
+}
+
+func TestValidateBenchmarkAndConcurrency(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DNSServers = []string{"udp://8.8.8.8"}
+	cfg.Domains = []string{"example.com"}
+	cfg.Benchmark.Rounds = 3
+	cfg.Benchmark.Warmup = 1
+	cfg.Concurrency.Servers = 2
+	cfg.Concurrency.Domains = 4
+	cfg.Concurrency.Pings = 8
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected benchmark config to be valid: %v", err)
+	}
+
+	cfg.Benchmark.Rounds = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected zero rounds to be rejected")
+	}
+
+	cfg.Benchmark.Rounds = 3
+	cfg.Benchmark.Warmup = -1
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected negative warmup to be rejected")
+	}
+
+	cfg.Benchmark.Warmup = 1
+	cfg.Concurrency.Pings = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected zero ping concurrency to be rejected")
+	}
+}
+
+func TestLoadConfigKeepsNestedDefaults(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	content := []byte(`
+dns_servers:
+  - udp://8.8.8.8
+domains:
+  - example.com
+benchmark:
+  rounds: 2
+concurrency:
+  servers: 2
+`)
+	if err := os.WriteFile(path, content, 0644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.Benchmark.Rounds != 2 {
+		t.Fatalf("expected rounds from config, got %d", cfg.Benchmark.Rounds)
+	}
+	if cfg.Benchmark.Score.PingWeight != 0.6 {
+		t.Fatalf("expected default score weights to remain, got %#v", cfg.Benchmark.Score)
+	}
+	if cfg.Concurrency.Servers != 2 {
+		t.Fatalf("expected servers concurrency from config, got %d", cfg.Concurrency.Servers)
+	}
+	if cfg.Concurrency.Domains != 16 || cfg.Concurrency.Pings != 32 {
+		t.Fatalf("expected nested concurrency defaults to remain, got %#v", cfg.Concurrency)
 	}
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"GoFastDNS/internal/config"
+	"strings"
 	"testing"
 	"time"
 )
@@ -21,9 +22,27 @@ func TestApplyFlagOverrides(t *testing.T) {
 		pingPriv:    true,
 		ipSelect:    "first",
 		ipFamily:    "dual",
-		rawFlags:    []string{"-ping-privileged"},
-		outputPath:  "results",
-		outputFmt:   "json",
+		rounds:      3,
+		warmup:      1,
+		dnsWeight:   0.2,
+		pingWeight:  0.7,
+		succWeight:  0.1,
+		concServers: 2,
+		concDomains: 8,
+		concPings:   12,
+		rawFlags: []string{
+			"-ping-privileged",
+			"-rounds=3",
+			"-warmup=1",
+			"-score-dns-weight=0.2",
+			"-score-ping-weight=0.7",
+			"-score-success-weight=0.1",
+			"-concurrency-servers=2",
+			"-concurrency-domains=8",
+			"-concurrency-pings=12",
+		},
+		outputPath: "results",
+		outputFmt:  "json",
 	}
 
 	applyFlagOverrides(&cfg, opts)
@@ -64,10 +83,37 @@ func TestApplyFlagOverrides(t *testing.T) {
 	if cfg.Ping.IPFamily != "dual" {
 		t.Fatalf("expected ip family=dual, got %q", cfg.Ping.IPFamily)
 	}
+	if cfg.Benchmark.Rounds != 3 || cfg.Benchmark.Warmup != 1 {
+		t.Fatalf("unexpected benchmark rounds/warmup: %#v", cfg.Benchmark)
+	}
+	if cfg.Benchmark.Score.DNSWeight != 0.2 || cfg.Benchmark.Score.PingWeight != 0.7 || cfg.Benchmark.Score.SuccessWeight != 0.1 {
+		t.Fatalf("unexpected score weights: %#v", cfg.Benchmark.Score)
+	}
+	if cfg.Concurrency.Servers != 2 || cfg.Concurrency.Domains != 8 || cfg.Concurrency.Pings != 12 {
+		t.Fatalf("unexpected concurrency: %#v", cfg.Concurrency)
+	}
 	if cfg.Output.Path != "results" {
 		t.Fatalf("expected output path results, got %q", cfg.Output.Path)
 	}
 	if cfg.Output.Format != "json" {
 		t.Fatalf("expected output format json, got %q", cfg.Output.Format)
+	}
+}
+
+func TestRunRejectsInvalidRoundFlag(t *testing.T) {
+	var stdout strings.Builder
+	var stderr strings.Builder
+
+	code := RunWithWriters([]string{
+		"-mode", "dns-ping",
+		"-dns", "udp://8.8.8.8",
+		"-rounds=0",
+	}, &stdout, &stderr)
+
+	if code != 1 {
+		t.Fatalf("expected config error exit code 1, got %d", code)
+	}
+	if !strings.Contains(stderr.String(), "benchmark.rounds") {
+		t.Fatalf("expected benchmark.rounds error, got %q", stderr.String())
 	}
 }

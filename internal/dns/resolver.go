@@ -1,6 +1,7 @@
 package dns
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -42,30 +43,30 @@ func NewResolver(address string) (Resolver, error) {
 	return &UDPResolver{server: address}, nil
 }
 
-func (r *UDPResolver) Resolve(domain string, timeout time.Duration, options ResolveOptions) DNSResult {
+func (r *UDPResolver) Resolve(ctx context.Context, domain string, timeout time.Duration, options ResolveOptions) DNSResult {
 	c := dns.Client{
 		Timeout: timeout,
 	}
-	return exchangeQueries(&c, r.server, "53", ProtocolUDP, domain, options)
+	return exchangeQueries(ctx, &c, r.server, "53", ProtocolUDP, domain, options)
 }
 
-func (r *TCPResolver) Resolve(domain string, timeout time.Duration, options ResolveOptions) DNSResult {
+func (r *TCPResolver) Resolve(ctx context.Context, domain string, timeout time.Duration, options ResolveOptions) DNSResult {
 	c := dns.Client{
 		Net:     "tcp",
 		Timeout: timeout,
 	}
-	return exchangeQueries(&c, r.server, "53", ProtocolTCP, domain, options)
+	return exchangeQueries(ctx, &c, r.server, "53", ProtocolTCP, domain, options)
 }
 
-func (r *TLSResolver) Resolve(domain string, timeout time.Duration, options ResolveOptions) DNSResult {
+func (r *TLSResolver) Resolve(ctx context.Context, domain string, timeout time.Duration, options ResolveOptions) DNSResult {
 	c := dns.Client{
 		Net:     "tcp-tls",
 		Timeout: timeout,
 	}
-	return exchangeQueries(&c, r.server, "853", ProtocolTLS, domain, options)
+	return exchangeQueries(ctx, &c, r.server, "853", ProtocolTLS, domain, options)
 }
 
-func exchangeQueries(c *dns.Client, server, defaultPort string, protocol Protocol, domain string, options ResolveOptions) DNSResult {
+func exchangeQueries(ctx context.Context, c *dns.Client, server, defaultPort string, protocol Protocol, domain string, options ResolveOptions) DNSResult {
 	result := DNSResult{
 		Server:   server,
 		Domain:   domain,
@@ -78,6 +79,12 @@ func exchangeQueries(c *dns.Client, server, defaultPort string, protocol Protoco
 	successfulQueries := 0
 	var lastErr error
 	for _, recordType := range recordTypes {
+		if err := ctx.Err(); err != nil {
+			result.ResolutionError = err
+			result.QueryErrors = append(result.QueryErrors, err.Error())
+			return result
+		}
+
 		queryType, err := dnsQueryType(recordType)
 		if err != nil {
 			result.ResolutionError = err
@@ -87,7 +94,7 @@ func exchangeQueries(c *dns.Client, server, defaultPort string, protocol Protoco
 		msg := dns.Msg{}
 		msg.SetQuestion(dns.Fqdn(domain), queryType)
 
-		resp, duration, err := c.Exchange(&msg, address)
+		resp, duration, err := c.ExchangeContext(ctx, &msg, address)
 		result.ResponseTime += duration
 		if err != nil {
 			result.QueryErrors = append(result.QueryErrors, fmt.Sprintf("%s: %v", recordType, err))

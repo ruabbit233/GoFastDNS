@@ -4,6 +4,8 @@ import (
 	"GoFastDNS/internal/config"
 	"GoFastDNS/internal/dns"
 	"GoFastDNS/internal/ping"
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -14,12 +16,23 @@ import (
 	"time"
 )
 
+type resolveRunner func(context.Context, string, string, int, time.Duration, dns.ResolveOptions) dns.DNSResult
+type ipPingRunner func(context.Context, string, ping.Options) ping.PingResult
+
 func Run(cfg config.Config, logger *log.Logger) (string, error) {
+	return RunContext(context.Background(), cfg, logger)
+}
+
+func RunContext(ctx context.Context, cfg config.Config, logger *log.Logger) (string, error) {
+	config.ApplyDefaults(&cfg)
 	outputFormat := strings.ToLower(cfg.Output.Format)
 
 	switch cfg.Mode {
 	case config.ModeResolvePing:
-		results := RunResolvePing(cfg, logger)
+		results, err := RunResolvePingContext(ctx, cfg, logger)
+		if err != nil {
+			return "", err
+		}
 		SortResolvePingResults(results)
 		switch outputFormat {
 		case "excel":
@@ -32,7 +45,10 @@ func Run(cfg config.Config, logger *log.Logger) (string, error) {
 			return "", fmt.Errorf("unsupported output format %q", cfg.Output.Format)
 		}
 	case config.ModeDNSPing:
-		results := RunDNSPing(cfg, logger)
+		results, err := RunDNSPingContext(ctx, cfg, logger)
+		if err != nil {
+			return "", err
+		}
 		SortDNSPingResults(results)
 		switch outputFormat {
 		case "excel":
@@ -59,6 +75,16 @@ func RunBenchmark(servers []string, domains []string, attempts int, timeout time
 }
 
 func RunResolvePing(cfg config.Config, logger *log.Logger) []BenchmarkResult {
+	results, _ := RunResolvePingContext(context.Background(), cfg, logger)
+	return results
+}
+
+func RunResolvePingContext(ctx context.Context, cfg config.Config, logger *log.Logger) ([]BenchmarkResult, error) {
+	return runResolvePingWithRunners(ctx, cfg, logger, dns.ResolveDNSWithOptionsContext, ping.PingIPWithOptionsContext)
+}
+
+func runResolvePingWithRunners(ctx context.Context, cfg config.Config, logger *log.Logger, resolver resolveRunner, pinger ipPingRunner) ([]BenchmarkResult, error) {
+	config.ApplyDefaults(&cfg)
 	var results []BenchmarkResult
 	var wg sync.WaitGroup
 	mu := &sync.Mutex{}
@@ -73,94 +99,77 @@ func RunResolvePing(cfg config.Config, logger *log.Logger) []BenchmarkResult {
 	resolveOptions := dns.ResolveOptions{
 		RecordTypes: dnsRecordTypes(cfg.DNS.RecordTypes),
 	}
+	pingSem := make(chan struct{}, cfg.Concurrency.Pings)
+	serverSem := make(chan struct{}, cfg.Concurrency.Servers)
+	errCh := make(chan error, 1)
+	var loopErr error
 
 	for _, server := range cfg.DNSServers {
+		if err := ctx.Err(); err != nil {
+			loopErr = err
+			break
+		}
+		if err := acquire(ctx, serverSem); err != nil {
+			loopErr = err
+			break
+		}
 		wg.Add(1)
 		go func(s string) {
 			defer wg.Done()
-			var total time.Duration
-			var pingTotal time.Duration
-			domainResults := make([]DomainResult, 0, len(cfg.Domains))
-			successCount := 0
-			pingSuccessCount := 0
-			totalQueries := len(cfg.Domains)
+			defer release(serverSem)
+
+			domainResults := make([]DomainResult, 0, len(cfg.Domains)*cfg.Benchmark.Rounds)
 			totalRetries := 0
+			totalMeasured := len(cfg.Domains) * cfg.Benchmark.Rounds
+			totalRuns := cfg.Benchmark.Warmup + cfg.Benchmark.Rounds
 
-			for _, domain := range cfg.Domains {
-				// DNS 解析
-				result := dns.ResolveDNSWithOptions(s, domain, cfg.Attempts, cfg.Timeout, resolveOptions)
-
-				// 执行 Ping 测试
-				dnsPingResult := ping.PingDNSResultWithOptions(result, pingOptions)
-
-				domainResult := DomainResult{
-					Domain:         domain,
-					Answers:        result.Answers,
-					ResponseCodes:  result.ResponseCodes,
-					ResponseTime:   result.ResponseTime,
-					Error:          result.ResolutionError,
-					QueryErrors:    result.QueryErrors,
-					NoAnswer:       result.NoAnswer,
-					RetryCount:     result.RetryCount,
-					DnsPingResults: dnsPingResult, // 添加 Ping 结果
+			for round := 1; round <= totalRuns; round++ {
+				roundResults, err := runResolveRound(ctx, cfg, s, round, pingOptions, resolveOptions, resolver, pinger, pingSem, logger)
+				if round <= cfg.Benchmark.Warmup {
+					if err != nil {
+						recordError(errCh, err)
+						return
+					}
+					continue
 				}
-
-				domainResults = append(domainResults, domainResult)
-				totalRetries += result.RetryCount
-
-				if result.ResolutionError == nil {
-					total += result.ResponseTime
-					successCount++
-
-					// 记录 Ping 结果
-					if len(dnsPingResult.PingResults) > 0 {
-						if dnsPingResult.Error != nil {
-							logger.Printf("DNS服务器：%s，域名：%s，解析IP：%v，Ping失败：%v\n",
-								s, domain, result.Answers, dnsPingResult.Error)
-						} else {
-							logger.Printf("DNS服务器：%s，域名：%s，解析IP：%v，平均延迟：%v\n",
-								s, domain, result.Answers, dnsPingResult.AvgRTT)
-						}
-					}
-					if dnsPingResult.AvgRTT > 0 {
-						pingTotal += dnsPingResult.AvgRTT
-						pingSuccessCount++
-					}
+				domainResults = append(domainResults, roundResults...)
+				for _, result := range roundResults {
+					totalRetries += result.RetryCount
+				}
+				if err != nil {
+					recordError(errCh, err)
+					return
 				}
 			}
 
-			actualTotalQueries := totalQueries + totalRetries
-			successRate := float64(successCount) / float64(actualTotalQueries)
-
-			var avgResponseTime time.Duration
-			if successCount > 0 {
-				avgResponseTime = total / time.Duration(successCount)
-			}
-
-			var avgPingRTT time.Duration
-			if pingSuccessCount > 0 {
-				avgPingRTT = pingTotal / time.Duration(pingSuccessCount)
-			}
+			result := buildBenchmarkResult(s, cfg.Benchmark.Rounds, cfg.Benchmark.Warmup, totalMeasured, domainResults, totalRetries)
 
 			mu.Lock()
-			results = append(results, BenchmarkResult{
-				Server:          s,
-				AvgResponseTime: avgResponseTime,
-				DomainResults:   domainResults,
-				SuccessRate:     successRate,
-				TotalRetries:    totalRetries,
-				AvgPingRTT:      avgPingRTT,
-			})
+			results = append(results, result)
 			mu.Unlock()
 			logger.Printf("DNS服务器：%s，平均DNS响应时间：%s，平均解析IP延迟：%s，成功率：%.2f%%，总重试次数：%d\n",
-				s, avgResponseTime, avgPingRTT, successRate*100, totalRetries)
+				s, result.AvgResponseTime, result.AvgPingRTT, result.SuccessRate*100, totalRetries)
 		}(server)
 	}
 	wg.Wait()
-	return results
+	applyResolveScores(results, cfg.Benchmark.Score)
+	if loopErr != nil {
+		return results, loopErr
+	}
+	return results, firstError(errCh, ctx.Err())
 }
 
 func RunDNSPing(cfg config.Config, logger *log.Logger) []DNSPingBenchmarkResult {
+	results, _ := RunDNSPingContext(context.Background(), cfg, logger)
+	return results
+}
+
+func RunDNSPingContext(ctx context.Context, cfg config.Config, logger *log.Logger) ([]DNSPingBenchmarkResult, error) {
+	return runDNSPingWithRunner(ctx, cfg, logger, ping.PingIPWithOptionsContext)
+}
+
+func runDNSPingWithRunner(ctx context.Context, cfg config.Config, logger *log.Logger, pinger ipPingRunner) ([]DNSPingBenchmarkResult, error) {
+	config.ApplyDefaults(&cfg)
 	results := make([]DNSPingBenchmarkResult, 0, len(cfg.DNSServers))
 	var wg sync.WaitGroup
 	mu := &sync.Mutex{}
@@ -172,24 +181,36 @@ func RunDNSPing(cfg config.Config, logger *log.Logger) []DNSPingBenchmarkResult 
 		IPSelection: cfg.Ping.IPSelection,
 		IPFamily:    cfg.Ping.IPFamily,
 	}
+	pingSem := make(chan struct{}, cfg.Concurrency.Pings)
+	serverSem := make(chan struct{}, cfg.Concurrency.Servers)
+	errCh := make(chan error, 1)
+	var loopErr error
 
 	for _, server := range cfg.DNSServers {
+		if err := ctx.Err(); err != nil {
+			loopErr = err
+			break
+		}
+		if err := acquire(ctx, serverSem); err != nil {
+			loopErr = err
+			break
+		}
 		wg.Add(1)
 		go func(s string) {
 			defer wg.Done()
+			defer release(serverSem)
+
 			target, err := pingTargetFromServer(s)
 			result := DNSPingBenchmarkResult{
 				Server: s,
 				Target: target,
+				Rounds: cfg.Benchmark.Rounds,
+				Warmup: cfg.Benchmark.Warmup,
 			}
 			if err != nil {
 				result.Error = err
 			} else {
-				pingResult := ping.PingIPWithOptions(target, pingOptions)
-				result.RTT = pingResult.RTT
-				result.PacketLoss = pingResult.PacketLoss
-				result.PacketsSent = pingResult.PacketsSent
-				result.Error = pingResult.Error
+				result = runDNSPingTarget(ctx, result, cfg.Benchmark.Rounds, cfg.Benchmark.Warmup, target, pingOptions, pinger, pingSem)
 			}
 
 			mu.Lock()
@@ -198,6 +219,9 @@ func RunDNSPing(cfg config.Config, logger *log.Logger) []DNSPingBenchmarkResult 
 
 			if result.Error != nil {
 				logger.Printf("DNS服务器：%s，Ping目标：%s，错误：%v\n", s, target, result.Error)
+				if errors.Is(result.Error, context.Canceled) || errors.Is(result.Error, context.DeadlineExceeded) {
+					recordError(errCh, result.Error)
+				}
 				return
 			}
 			logger.Printf("DNS服务器：%s，Ping目标：%s，平均延迟：%s，丢包率：%.2f%%\n",
@@ -206,13 +230,258 @@ func RunDNSPing(cfg config.Config, logger *log.Logger) []DNSPingBenchmarkResult 
 	}
 
 	wg.Wait()
-	return results
+	applyDNSPingScores(results, cfg.Benchmark.Score)
+	if loopErr != nil {
+		return results, loopErr
+	}
+	return results, firstError(errCh, ctx.Err())
+}
+
+func runResolveRound(ctx context.Context, cfg config.Config, server string, round int, pingOptions ping.Options, resolveOptions dns.ResolveOptions, resolver resolveRunner, pinger ipPingRunner, pingSem chan struct{}, logger *log.Logger) ([]DomainResult, error) {
+	results := make([]DomainResult, 0, len(cfg.Domains))
+	var wg sync.WaitGroup
+	mu := &sync.Mutex{}
+	domainSem := make(chan struct{}, cfg.Concurrency.Domains)
+	errCh := make(chan error, 1)
+	var loopErr error
+
+	for _, domain := range cfg.Domains {
+		if err := ctx.Err(); err != nil {
+			loopErr = err
+			break
+		}
+		if err := acquire(ctx, domainSem); err != nil {
+			loopErr = err
+			break
+		}
+
+		wg.Add(1)
+		go func(domain string) {
+			defer wg.Done()
+			defer release(domainSem)
+
+			result := resolver(ctx, server, domain, cfg.Attempts, cfg.Timeout, resolveOptions)
+			dnsPingResult := ping.PingDNSResultWithOptionsAndRunner(ctx, result, pingOptions, func(ctx context.Context, ip string, options ping.Options) ping.PingResult {
+				if err := acquire(ctx, pingSem); err != nil {
+					return ping.PingResult{IP: ip, Error: err}
+				}
+				defer release(pingSem)
+				return pinger(ctx, ip, options)
+			})
+
+			domainResult := DomainResult{
+				Round:          round - cfg.Benchmark.Warmup,
+				Domain:         domain,
+				Answers:        result.Answers,
+				ResponseCodes:  result.ResponseCodes,
+				ResponseTime:   result.ResponseTime,
+				Error:          result.ResolutionError,
+				QueryErrors:    result.QueryErrors,
+				NoAnswer:       result.NoAnswer,
+				RetryCount:     result.RetryCount,
+				DnsPingResults: dnsPingResult,
+			}
+
+			if len(dnsPingResult.PingResults) > 0 {
+				if dnsPingResult.Error != nil {
+					logger.Printf("DNS服务器：%s，域名：%s，第%d轮，解析IP：%v，Ping失败：%v\n",
+						server, domain, round, result.Answers, dnsPingResult.Error)
+				} else {
+					logger.Printf("DNS服务器：%s，域名：%s，第%d轮，解析IP：%v，平均延迟：%v\n",
+						server, domain, round, result.Answers, dnsPingResult.AvgRTT)
+				}
+			}
+			if isContextError(result.ResolutionError) || isContextError(dnsPingResult.Error) {
+				recordError(errCh, firstNonNil(result.ResolutionError, dnsPingResult.Error))
+			}
+
+			mu.Lock()
+			results = append(results, domainResult)
+			mu.Unlock()
+		}(domain)
+	}
+
+	wg.Wait()
+	if loopErr != nil {
+		return results, loopErr
+	}
+	return results, firstError(errCh, ctx.Err())
+}
+
+func buildBenchmarkResult(server string, rounds, warmup, totalMeasured int, domainResults []DomainResult, totalRetries int) BenchmarkResult {
+	dnsDurations := make([]time.Duration, 0, len(domainResults))
+	pingDurations := make([]time.Duration, 0, len(domainResults))
+	dnsSuccessCount := 0
+	pingSuccessCount := 0
+
+	for _, result := range domainResults {
+		if result.Error == nil {
+			dnsSuccessCount++
+			if result.ResponseTime > 0 {
+				dnsDurations = append(dnsDurations, result.ResponseTime)
+			}
+		}
+		if result.DnsPingResults.AvgRTT > 0 {
+			pingSuccessCount++
+			pingDurations = append(pingDurations, result.DnsPingResults.AvgRTT)
+		}
+	}
+
+	dnsStats := calculateDurationStats(dnsDurations)
+	pingStats := calculateDurationStats(pingDurations)
+	dnsSuccessRate := ratio(dnsSuccessCount, totalMeasured)
+	pingSuccessRate := ratio(pingSuccessCount, totalMeasured)
+	return BenchmarkResult{
+		Server:          server,
+		Rounds:          rounds,
+		Warmup:          warmup,
+		AvgResponseTime: dnsStats.Avg,
+		DomainResults:   domainResults,
+		SuccessRate:     dnsSuccessRate,
+		DNSSuccessRate:  dnsSuccessRate,
+		PingSuccessRate: pingSuccessRate,
+		TotalRetries:    totalRetries,
+		AvgPingRTT:      pingStats.Avg,
+		DNSStats:        dnsStats,
+		PingStats:       pingStats,
+	}
+}
+
+func runDNSPingTarget(ctx context.Context, result DNSPingBenchmarkResult, rounds, warmup int, target string, options ping.Options, pinger ipPingRunner, pingSem chan struct{}) DNSPingBenchmarkResult {
+	totalRuns := warmup + rounds
+	roundResults := make([]DNSPingRoundResult, 0, rounds)
+	rtts := make([]time.Duration, 0, rounds)
+	successCount := 0
+	var totalLoss float64
+	var totalPackets int
+	var lastErr error
+
+	for round := 1; round <= totalRuns; round++ {
+		if err := acquire(ctx, pingSem); err != nil {
+			result.Error = err
+			return result
+		}
+		pingResult := pinger(ctx, target, options)
+		release(pingSem)
+		if round <= warmup {
+			if pingResult.Error != nil && isContextError(pingResult.Error) {
+				result.Error = pingResult.Error
+				return result
+			}
+			continue
+		}
+
+		roundResult := DNSPingRoundResult{
+			Round:       round - warmup,
+			RTT:         pingResult.RTT,
+			PacketLoss:  pingResult.PacketLoss,
+			PacketsSent: pingResult.PacketsSent,
+			Error:       pingResult.Error,
+		}
+		roundResults = append(roundResults, roundResult)
+		if pingResult.Error != nil {
+			lastErr = pingResult.Error
+			if isContextError(pingResult.Error) {
+				result.RoundResults = roundResults
+				result.Error = pingResult.Error
+				return result
+			}
+			continue
+		}
+
+		successCount++
+		rtts = append(rtts, pingResult.RTT)
+		totalLoss += pingResult.PacketLoss
+		totalPackets += pingResult.PacketsSent
+	}
+
+	stats := calculateDurationStats(rtts)
+	result.RTT = stats.Avg
+	result.Stats = stats
+	result.RoundResults = roundResults
+	result.SuccessRate = ratio(successCount, rounds)
+	if successCount > 0 {
+		result.PacketLoss = totalLoss / float64(successCount)
+		result.PacketsSent = totalPackets / successCount
+	} else if lastErr != nil {
+		result.Error = lastErr
+	}
+	return result
+}
+
+func acquire(ctx context.Context, sem chan struct{}) error {
+	select {
+	case sem <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func release(sem chan struct{}) {
+	<-sem
+}
+
+func ratio(numerator, denominator int) float64 {
+	if denominator <= 0 {
+		return 0
+	}
+	return float64(numerator) / float64(denominator)
+}
+
+func firstError(errCh <-chan error, fallback error) error {
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return err
+		}
+	default:
+	}
+	return fallback
+}
+
+func recordError(errCh chan<- error, err error) {
+	if err == nil {
+		return
+	}
+	select {
+	case errCh <- err:
+	default:
+	}
+}
+
+func firstNonNil(errors ...error) error {
+	for _, err := range errors {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func isContextError(err error) bool {
+	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func SortResolvePingResults(results []BenchmarkResult) {
 	sort.SliceStable(results, func(i, j int) bool {
 		left := results[i]
 		right := results[j]
+		if (left.PingSuccessRate > 0) != (right.PingSuccessRate > 0) {
+			return left.PingSuccessRate > 0
+		}
+		if (left.DNSSuccessRate > 0) != (right.DNSSuccessRate > 0) {
+			return left.DNSSuccessRate > 0
+		}
+		if left.Score != right.Score {
+			return left.Score > right.Score
+		}
+		if left.PingSuccessRate != right.PingSuccessRate {
+			return left.PingSuccessRate > right.PingSuccessRate
+		}
+		if left.DNSSuccessRate != right.DNSSuccessRate {
+			return left.DNSSuccessRate > right.DNSSuccessRate
+		}
 		if left.AvgPingRTT != right.AvgPingRTT {
 			if left.AvgPingRTT == 0 {
 				return false
@@ -235,6 +504,15 @@ func SortDNSPingResults(results []DNSPingBenchmarkResult) {
 		right := results[j]
 		if (left.Error == nil) != (right.Error == nil) {
 			return left.Error == nil
+		}
+		if (left.SuccessRate > 0) != (right.SuccessRate > 0) {
+			return left.SuccessRate > 0
+		}
+		if left.Score != right.Score {
+			return left.Score > right.Score
+		}
+		if left.SuccessRate != right.SuccessRate {
+			return left.SuccessRate > right.SuccessRate
 		}
 		if left.RTT != right.RTT {
 			if left.RTT == 0 {

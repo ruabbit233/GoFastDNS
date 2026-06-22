@@ -18,14 +18,16 @@ const (
 )
 
 type Config struct {
-	Mode       Mode          `yaml:"mode"`
-	DNSServers []string      `yaml:"dns_servers"`
-	Domains    []string      `yaml:"domains"`
-	DNS        DNSConfig     `yaml:"dns"`
-	Attempts   int           `yaml:"attempts"` // 最大重试次数
-	Timeout    time.Duration `yaml:"timeout"`  // DNS 查询超时时间
-	Ping       PingConfig    `yaml:"ping"`
-	Output     OutputConfig  `yaml:"output"`
+	Mode        Mode              `yaml:"mode"`
+	DNSServers  []string          `yaml:"dns_servers"`
+	Domains     []string          `yaml:"domains"`
+	DNS         DNSConfig         `yaml:"dns"`
+	Attempts    int               `yaml:"attempts"` // 最大重试次数
+	Timeout     time.Duration     `yaml:"timeout"`  // DNS 查询超时时间
+	Ping        PingConfig        `yaml:"ping"`
+	Benchmark   BenchmarkConfig   `yaml:"benchmark"`
+	Concurrency ConcurrencyConfig `yaml:"concurrency"`
+	Output      OutputConfig      `yaml:"output"`
 }
 
 type DNSConfig struct {
@@ -39,6 +41,24 @@ type PingConfig struct {
 	Privileged  bool          `yaml:"privileged"`
 	IPSelection string        `yaml:"ip_selection"`
 	IPFamily    string        `yaml:"ip_family"`
+}
+
+type BenchmarkConfig struct {
+	Rounds int         `yaml:"rounds"`
+	Warmup int         `yaml:"warmup"`
+	Score  ScoreConfig `yaml:"score"`
+}
+
+type ScoreConfig struct {
+	DNSWeight     float64 `yaml:"dns_weight"`
+	PingWeight    float64 `yaml:"ping_weight"`
+	SuccessWeight float64 `yaml:"success_weight"`
+}
+
+type ConcurrencyConfig struct {
+	Servers int `yaml:"servers"`
+	Domains int `yaml:"domains"`
+	Pings   int `yaml:"pings"`
 }
 
 type OutputConfig struct {
@@ -60,6 +80,20 @@ func DefaultConfig() Config {
 			Timeout:     2 * time.Second,
 			IPSelection: "all",
 			IPFamily:    "ipv4",
+		},
+		Benchmark: BenchmarkConfig{
+			Rounds: 1,
+			Warmup: 0,
+			Score: ScoreConfig{
+				DNSWeight:     0.3,
+				PingWeight:    0.6,
+				SuccessWeight: 0.1,
+			},
+		},
+		Concurrency: ConcurrencyConfig{
+			Servers: 4,
+			Domains: 16,
+			Pings:   32,
 		},
 		Output: OutputConfig{
 			Format: "excel",
@@ -124,6 +158,18 @@ func ApplyDefaults(config *Config) {
 		config.Ping.IPFamily = defaults.Ping.IPFamily
 	}
 	config.Ping.IPFamily = strings.ToLower(config.Ping.IPFamily)
+	if config.Benchmark.Rounds == 0 &&
+		config.Benchmark.Warmup == 0 &&
+		config.Benchmark.Score.DNSWeight == 0 &&
+		config.Benchmark.Score.PingWeight == 0 &&
+		config.Benchmark.Score.SuccessWeight == 0 {
+		config.Benchmark = defaults.Benchmark
+	}
+	if config.Concurrency.Servers == 0 &&
+		config.Concurrency.Domains == 0 &&
+		config.Concurrency.Pings == 0 {
+		config.Concurrency = defaults.Concurrency
+	}
 	if config.Output.Format == "" {
 		config.Output.Format = defaults.Output.Format
 	}
@@ -179,6 +225,35 @@ func Validate(config Config) error {
 	case "ipv4", "ipv6", "dual":
 	default:
 		return fmt.Errorf("unsupported ping.ip_family %q", config.Ping.IPFamily)
+	}
+	if config.Benchmark.Rounds <= 0 {
+		return errors.New("benchmark.rounds must be greater than 0")
+	}
+	if config.Benchmark.Warmup < 0 {
+		return errors.New("benchmark.warmup must be greater than or equal to 0")
+	}
+	if config.Benchmark.Score.DNSWeight < 0 {
+		return errors.New("benchmark.score.dns_weight must be greater than or equal to 0")
+	}
+	if config.Benchmark.Score.PingWeight < 0 {
+		return errors.New("benchmark.score.ping_weight must be greater than or equal to 0")
+	}
+	if config.Benchmark.Score.SuccessWeight < 0 {
+		return errors.New("benchmark.score.success_weight must be greater than or equal to 0")
+	}
+	if config.Benchmark.Score.DNSWeight == 0 &&
+		config.Benchmark.Score.PingWeight == 0 &&
+		config.Benchmark.Score.SuccessWeight == 0 {
+		return errors.New("at least one benchmark.score weight must be greater than 0")
+	}
+	if config.Concurrency.Servers <= 0 {
+		return errors.New("concurrency.servers must be greater than 0")
+	}
+	if config.Concurrency.Domains <= 0 {
+		return errors.New("concurrency.domains must be greater than 0")
+	}
+	if config.Concurrency.Pings <= 0 {
+		return errors.New("concurrency.pings must be greater than 0")
 	}
 
 	format := strings.ToLower(config.Output.Format)
