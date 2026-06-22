@@ -44,6 +44,28 @@ func TestValidateRejectsUnknownIPSelection(t *testing.T) {
 	}
 }
 
+func TestValidateAcceptsHTMLOutput(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DNSServers = []string{"udp://8.8.8.8"}
+	cfg.Domains = []string{"example.com"}
+	cfg.Output.Format = "html"
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected html output to be valid: %v", err)
+	}
+}
+
+func TestValidateRejectsUnknownOutputFormat(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DNSServers = []string{"udp://8.8.8.8"}
+	cfg.Domains = []string{"example.com"}
+	cfg.Output.Format = "json"
+
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected invalid output format to be rejected")
+	}
+}
+
 func TestValidateRequiresDomainsOnlyForResolvePing(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.DNSServers = []string{"udp://8.8.8.8"}

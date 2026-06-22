@@ -149,7 +149,9 @@ func Validate(config Config) error {
 	}
 
 	format := strings.ToLower(config.Output.Format)
-	if format != "excel" {
+	switch format {
+	case "excel", "html":
+	default:
 		return fmt.Errorf("unsupported output format %q", config.Output.Format)
 	}
 

@@ -8,7 +8,7 @@ ping:
   privileged: false # 默认使用非特权 ping，避免普通用户缺少 raw ICMP 权限
   ip_selection: all # 可选: all / first；first 用于模拟只使用首个解析 IP
 output:
-  format: excel
+  format: html # 可选: excel / html
   path: .
 dns_servers:
   - "udp://211.64.142.4"

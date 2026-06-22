@@ -1,0 +1,777 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Resolve Ping Benchmark</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --ink: #18202a;
+  --muted: #667085;
+  --line: #d9e0e7;
+  --good: #1f9d68;
+  --warn: #d97706;
+  --bad: #d64545;
+  --dns: #2563eb;
+  --ping: #10b981;
+  --loss: #f97316;
+  --soft: #edf2f7;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.page {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 28px 20px 48px;
+}
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+.meta {
+  color: var(--muted);
+  text-align: right;
+}
+.section {
+  margin-top: 18px;
+}
+h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  letter-spacing: 0;
+}
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+.summary-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+}
+.summary-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+.rank {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fff;
+  font-weight: 700;
+}
+.server {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 700;
+}
+.metric-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+.metric {
+  display: grid;
+  grid-template-columns: minmax(92px, 1fr) minmax(72px, auto);
+  gap: 8px;
+  align-items: center;
+}
+.metric span {
+  color: var(--muted);
+}
+.metric strong {
+  text-align: right;
+}
+.bar {
+  grid-column: 1 / -1;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--soft);
+}
+.fill {
+  width: var(--w);
+  height: 100%;
+  border-radius: inherit;
+  background: var(--dns);
+}
+.fill.ping { background: var(--ping); }
+.fill.success { background: var(--good); }
+.fill.loss { background: var(--loss); }
+.table-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+table {
+  width: 100%;
+  min-width: 920px;
+  border-collapse: collapse;
+}
+th, td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+th {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  color: #344054;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+tr:last-child td { border-bottom: 0; }
+.num { text-align: right; white-space: nowrap; }
+.muted { color: var(--muted); }
+.error { color: var(--bad); overflow-wrap: anywhere; }
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--soft);
+  color: #344054;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.details {
+  margin-top: 14px;
+  display: grid;
+  gap: 16px;
+}
+.detail-block {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.detail-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: #f8fafc;
+}
+.detail-title strong {
+  overflow-wrap: anywhere;
+}
+.status-ok { color: var(--good); }
+.status-warn { color: var(--warn); }
+@media (max-width: 720px) {
+  .page { padding: 20px 12px 36px; }
+  .header {
+    display: block;
+  }
+  .meta {
+    margin-top: 8px;
+    text-align: left;
+  }
+  h1 { font-size: 24px; }
+  .summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="header">
+    <div>
+      <h1>Resolve Ping Benchmark</h1>
+      <div class="muted">模式: resolve-ping</div>
+    </div>
+    <div class="meta">生成时间<br>2026-06-22 15:16:37</div>
+  </header>
+
+  
+  <section class="section">
+    <h2>DNS 解析与 CDN 延迟排行</h2>
+    <div class="summary-grid">
+      
+      <article class="summary-card">
+        <div class="summary-head">
+          <div class="server">udp://119.29.29.29</div>
+          <div class="rank">#1</div>
+        </div>
+        <div class="metric-list">
+          <div class="metric">
+            <span>解析 IP 平均延迟</span>
+            <strong>17 ms</strong>
+            <div class="bar"><div class="fill ping" style="--w: 41.7%"></div></div>
+          </div>
+          <div class="metric">
+            <span>DNS 平均响应</span>
+            <strong>19 ms</strong>
+            <div class="bar"><div class="fill" style="--w: 93.4%"></div></div>
+          </div>
+          <div class="metric">
+            <span>成功率</span>
+            <strong>100.0%</strong>
+            <div class="bar"><div class="fill success" style="--w: 100.0%"></div></div>
+          </div>
+          <div class="metric">
+            <span>总重试次数</span>
+            <strong>0</strong>
+          </div>
+        </div>
+      </article>
+      
+      <article class="summary-card">
+        <div class="summary-head">
+          <div class="server">udp://8.8.8.8</div>
+          <div class="rank">#2</div>
+        </div>
+        <div class="metric-list">
+          <div class="metric">
+            <span>解析 IP 平均延迟</span>
+            <strong>18 ms</strong>
+            <div class="bar"><div class="fill ping" style="--w: 38.3%"></div></div>
+          </div>
+          <div class="metric">
+            <span>DNS 平均响应</span>
+            <strong>207 ms</strong>
+            <div class="bar"><div class="fill" style="--w: 28.0%"></div></div>
+          </div>
+          <div class="metric">
+            <span>成功率</span>
+            <strong>100.0%</strong>
+            <div class="bar"><div class="fill success" style="--w: 100.0%"></div></div>
+          </div>
+          <div class="metric">
+            <span>总重试次数</span>
+            <strong>0</strong>
+          </div>
+        </div>
+      </article>
+      
+      <article class="summary-card">
+        <div class="summary-head">
+          <div class="server">udp://123.123.123.123</div>
+          <div class="rank">#3</div>
+        </div>
+        <div class="metric-list">
+          <div class="metric">
+            <span>解析 IP 平均延迟</span>
+            <strong>21 ms</strong>
+            <div class="bar"><div class="fill ping" style="--w: 28.0%"></div></div>
+          </div>
+          <div class="metric">
+            <span>DNS 平均响应</span>
+            <strong>14 ms</strong>
+            <div class="bar"><div class="fill" style="--w: 95.1%"></div></div>
+          </div>
+          <div class="metric">
+            <span>成功率</span>
+            <strong>100.0%</strong>
+            <div class="bar"><div class="fill success" style="--w: 100.0%"></div></div>
+          </div>
+          <div class="metric">
+            <span>总重试次数</span>
+            <strong>0</strong>
+          </div>
+        </div>
+      </article>
+      
+      <article class="summary-card">
+        <div class="summary-head">
+          <div class="server">udp://180.76.76.76</div>
+          <div class="rank">#4</div>
+        </div>
+        <div class="metric-list">
+          <div class="metric">
+            <span>解析 IP 平均延迟</span>
+            <strong>21 ms</strong>
+            <div class="bar"><div class="fill ping" style="--w: 28.0%"></div></div>
+          </div>
+          <div class="metric">
+            <span>DNS 平均响应</span>
+            <strong>15 ms</strong>
+            <div class="bar"><div class="fill" style="--w: 94.8%"></div></div>
+          </div>
+          <div class="metric">
+            <span>成功率</span>
+            <strong>100.0%</strong>
+            <div class="bar"><div class="fill success" style="--w: 100.0%"></div></div>
+          </div>
+          <div class="metric">
+            <span>总重试次数</span>
+            <strong>0</strong>
+          </div>
+        </div>
+      </article>
+      
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>汇总对比</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>排名</th>
+            <th>DNS 服务器</th>
+            <th class="num">解析 IP 平均延迟</th>
+            <th class="num">DNS 平均响应</th>
+            <th class="num">成功率</th>
+            <th class="num">总重试</th>
+          </tr>
+        </thead>
+        <tbody>
+          
+          <tr>
+            <td>#1</td>
+            <td>udp://119.29.29.29</td>
+            <td class="num">17 ms</td>
+            <td class="num">19 ms</td>
+            <td class="num">100.0%</td>
+            <td class="num">0</td>
+          </tr>
+          
+          <tr>
+            <td>#2</td>
+            <td>udp://8.8.8.8</td>
+            <td class="num">18 ms</td>
+            <td class="num">207 ms</td>
+            <td class="num">100.0%</td>
+            <td class="num">0</td>
+          </tr>
+          
+          <tr>
+            <td>#3</td>
+            <td>udp://123.123.123.123</td>
+            <td class="num">21 ms</td>
+            <td class="num">14 ms</td>
+            <td class="num">100.0%</td>
+            <td class="num">0</td>
+          </tr>
+          
+          <tr>
+            <td>#4</td>
+            <td>udp://180.76.76.76</td>
+            <td class="num">21 ms</td>
+            <td class="num">15 ms</td>
+            <td class="num">100.0%</td>
+            <td class="num">0</td>
+          </tr>
+          
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>域名明细</h2>
+    <div class="details">
+      
+      <article class="detail-block">
+        <div class="detail-title">
+          <strong>#1 udp://119.29.29.29</strong>
+          <span class="muted">解析 IP 平均延迟 17 ms</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>域名</th>
+                <th class="num">DNS 响应</th>
+                <th class="num">重试</th>
+                <th>解析结果</th>
+                <th>Ping 目标</th>
+                <th class="num">平均延迟</th>
+                <th>错误</th>
+              </tr>
+            </thead>
+            <tbody>
+              
+              <tr>
+                <td>baidu.com</td>
+                <td class="num">23 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">111.63.65.247</span><span class="chip">111.63.65.103</span><span class="chip">124.237.177.164</span><span class="chip">110.242.74.102</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">111.63.65.247</span></div>
+                  
+                </td>
+                <td class="num">9 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+              <tr>
+                <td>bilibili.com</td>
+                <td class="num">17 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">119.3.70.188</span><span class="chip">139.159.241.37</span><span class="chip">8.134.50.24</span><span class="chip">47.103.24.173</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">119.3.70.188</span></div>
+                  
+                </td>
+                <td class="num">32 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+              <tr>
+                <td>douyin.com</td>
+                <td class="num">18 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">122.14.229.58</span><span class="chip">122.14.236.45</span><span class="chip">122.14.229.64</span><span class="chip">122.14.229.63</span><span class="chip">101.126.56.164</span><span class="chip">101.126.56.165</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">122.14.229.58</span></div>
+                  
+                </td>
+                <td class="num">9 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+            </tbody>
+          </table>
+        </div>
+      </article>
+      
+      <article class="detail-block">
+        <div class="detail-title">
+          <strong>#2 udp://8.8.8.8</strong>
+          <span class="muted">解析 IP 平均延迟 18 ms</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>域名</th>
+                <th class="num">DNS 响应</th>
+                <th class="num">重试</th>
+                <th>解析结果</th>
+                <th>Ping 目标</th>
+                <th class="num">平均延迟</th>
+                <th>错误</th>
+              </tr>
+            </thead>
+            <tbody>
+              
+              <tr>
+                <td>baidu.com</td>
+                <td class="num">207 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">111.63.65.103</span><span class="chip">110.242.74.102</span><span class="chip">124.237.177.164</span><span class="chip">111.63.65.247</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">111.63.65.103</span></div>
+                  
+                </td>
+                <td class="num">10 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+              <tr>
+                <td>bilibili.com</td>
+                <td class="num">198 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">119.3.70.188</span><span class="chip">47.103.24.173</span><span class="chip">139.159.241.37</span><span class="chip">8.134.50.24</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">119.3.70.188</span></div>
+                  
+                </td>
+                <td class="num">35 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+              <tr>
+                <td>douyin.com</td>
+                <td class="num">217 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">122.14.229.63</span><span class="chip">122.14.236.45</span><span class="chip">122.14.229.64</span><span class="chip">122.14.229.58</span><span class="chip">101.126.56.165</span><span class="chip">101.126.56.164</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">122.14.229.63</span></div>
+                  
+                </td>
+                <td class="num">10 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+            </tbody>
+          </table>
+        </div>
+      </article>
+      
+      <article class="detail-block">
+        <div class="detail-title">
+          <strong>#3 udp://123.123.123.123</strong>
+          <span class="muted">解析 IP 平均延迟 21 ms</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>域名</th>
+                <th class="num">DNS 响应</th>
+                <th class="num">重试</th>
+                <th>解析结果</th>
+                <th>Ping 目标</th>
+                <th class="num">平均延迟</th>
+                <th>错误</th>
+              </tr>
+            </thead>
+            <tbody>
+              
+              <tr>
+                <td>baidu.com</td>
+                <td class="num">19 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">111.63.65.247</span><span class="chip">111.63.65.103</span><span class="chip">124.237.177.164</span><span class="chip">110.242.74.102</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">111.63.65.247</span></div>
+                  
+                </td>
+                <td class="num">9 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+              <tr>
+                <td>bilibili.com</td>
+                <td class="num">10 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">119.3.70.188</span><span class="chip">139.159.241.37</span><span class="chip">47.103.24.173</span><span class="chip">8.134.50.24</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">119.3.70.188</span></div>
+                  
+                </td>
+                <td class="num">33 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+              <tr>
+                <td>douyin.com</td>
+                <td class="num">13 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">101.126.56.165</span><span class="chip">122.14.229.58</span><span class="chip">101.126.56.164</span><span class="chip">122.14.229.64</span><span class="chip">122.14.236.45</span><span class="chip">122.14.229.63</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">101.126.56.165</span></div>
+                  
+                </td>
+                <td class="num">20 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+            </tbody>
+          </table>
+        </div>
+      </article>
+      
+      <article class="detail-block">
+        <div class="detail-title">
+          <strong>#4 udp://180.76.76.76</strong>
+          <span class="muted">解析 IP 平均延迟 21 ms</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>域名</th>
+                <th class="num">DNS 响应</th>
+                <th class="num">重试</th>
+                <th>解析结果</th>
+                <th>Ping 目标</th>
+                <th class="num">平均延迟</th>
+                <th>错误</th>
+              </tr>
+            </thead>
+            <tbody>
+              
+              <tr>
+                <td>baidu.com</td>
+                <td class="num">18 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">39.156.70.3</span><span class="chip">220.181.7.138</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">39.156.70.3</span></div>
+                  
+                </td>
+                <td class="num">6 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+              <tr>
+                <td>bilibili.com</td>
+                <td class="num">14 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">47.103.24.173</span><span class="chip">119.3.70.188</span><span class="chip">139.159.241.37</span><span class="chip">8.134.50.24</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">47.103.24.173</span></div>
+                  
+                </td>
+                <td class="num">41 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+              <tr>
+                <td>douyin.com</td>
+                <td class="num">14 ms</td>
+                <td class="num">0</td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">101.126.56.164</span><span class="chip">101.126.56.165</span><span class="chip">122.14.236.45</span><span class="chip">122.14.229.64</span><span class="chip">122.14.229.63</span><span class="chip">122.14.229.58</span></div>
+                  
+                </td>
+                <td>
+                  
+                  <div class="chips"><span class="chip">101.126.56.164</span></div>
+                  
+                </td>
+                <td class="num">17 ms</td>
+                <td>
+                  
+                  
+                  <span class="status-ok">正常</span>
+                </td>
+              </tr>
+              
+            </tbody>
+          </table>
+        </div>
+      </article>
+      
+    </div>
+  </section>
+  
+
+  
+</main>
+</body>
+</html>

@@ -91,7 +91,7 @@ func SaveResultsToExcel(servers []string, results []BenchmarkResult, outputPath 
 	}
 
 	// 保存文件
-	filename := outputFilename(outputPath, "resolve_ping_benchmark")
+	filename := outputFilename(outputPath, "resolve_ping_benchmark", "xlsx")
 	if err := f.SaveAs(filename); err != nil {
 		return "", fmt.Errorf("save excel file: %w", err)
 	}
@@ -143,7 +143,7 @@ func SaveDNSPingResultsToExcel(results []DNSPingBenchmarkResult, outputPath stri
 		}
 	}
 
-	filename := outputFilename(outputPath, "dns_ping_benchmark")
+	filename := outputFilename(outputPath, "dns_ping_benchmark", "xlsx")
 	if err := f.SaveAs(filename); err != nil {
 		return "", fmt.Errorf("save excel file: %w", err)
 	}
@@ -161,13 +161,14 @@ func getColumnName(index int) string {
 	return name
 }
 
-func outputFilename(outputPath, prefix string) string {
-	filename := fmt.Sprintf("%s_%s.xlsx", prefix, time.Now().Format("20060102_150405"))
+func outputFilename(outputPath, prefix, extension string) string {
+	extension = strings.TrimPrefix(strings.ToLower(extension), ".")
+	filename := fmt.Sprintf("%s_%s.%s", prefix, time.Now().Format("20060102_150405"), extension)
 	if outputPath == "" || outputPath == "." {
 		return filename
 	}
 
-	if strings.HasSuffix(strings.ToLower(outputPath), ".xlsx") {
+	if strings.HasSuffix(strings.ToLower(outputPath), "."+extension) {
 		return outputPath
 	}
 

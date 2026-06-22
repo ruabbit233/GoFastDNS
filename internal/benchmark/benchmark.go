@@ -15,15 +15,31 @@ import (
 )
 
 func Run(cfg config.Config, logger *log.Logger) (string, error) {
+	outputFormat := strings.ToLower(cfg.Output.Format)
+
 	switch cfg.Mode {
 	case config.ModeResolvePing:
 		results := RunResolvePing(cfg, logger)
 		SortResolvePingResults(results)
-		return SaveResultsToExcel(cfg.DNSServers, results, cfg.Output.Path)
+		switch outputFormat {
+		case "excel":
+			return SaveResultsToExcel(cfg.DNSServers, results, cfg.Output.Path)
+		case "html":
+			return SaveResultsToHTML(results, cfg.Output.Path)
+		default:
+			return "", fmt.Errorf("unsupported output format %q", cfg.Output.Format)
+		}
 	case config.ModeDNSPing:
 		results := RunDNSPing(cfg, logger)
 		SortDNSPingResults(results)
-		return SaveDNSPingResultsToExcel(results, cfg.Output.Path)
+		switch outputFormat {
+		case "excel":
+			return SaveDNSPingResultsToExcel(results, cfg.Output.Path)
+		case "html":
+			return SaveDNSPingResultsToHTML(results, cfg.Output.Path)
+		default:
+			return "", fmt.Errorf("unsupported output format %q", cfg.Output.Format)
+		}
 	default:
 		return "", fmt.Errorf("unsupported mode %q", cfg.Mode)
 	}

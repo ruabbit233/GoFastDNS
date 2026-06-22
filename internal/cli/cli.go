@@ -100,7 +100,7 @@ func parseFlags(args []string, output io.Writer) (flagOptions, error) {
 	fs.BoolVar(&opts.pingPriv, "ping-privileged", false, "使用特权 raw ICMP ping")
 	fs.StringVar(&opts.ipSelect, "ip-selection", "", "解析 IP 的 ping 目标选择策略: all 或 first")
 	fs.StringVar(&opts.outputPath, "output", "", "输出目录或文件路径")
-	fs.StringVar(&opts.outputFmt, "output-format", "", "输出格式，目前支持 excel")
+	fs.StringVar(&opts.outputFmt, "output-format", "", "输出格式，目前支持 excel 或 html")
 
 	err := fs.Parse(args)
 	opts.rawFlags = args

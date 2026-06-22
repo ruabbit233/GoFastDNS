@@ -2,7 +2,7 @@
 
 ## 简介
 
-GoFastDNS 是一个使用 Go 编写的 DNS 性能测试 CLI 工具。它可以通过命令行参数或 `config.yaml` 配置运行，并将测试结果导出为 Excel 文件。
+GoFastDNS 是一个使用 Go 编写的 DNS 性能测试 CLI 工具。它可以通过命令行参数或 `config.yaml` 配置运行，并将测试结果导出为 HTML 对比报告或 Excel 文件。
 
 ## 功能
 
@@ -52,7 +52,7 @@ ping:
   ip_selection: all
 
 output:
-  format: excel
+  format: html
   path: .
 
 dns_servers:
@@ -78,11 +78,17 @@ domains:
 -ping-timeout    ping 超时时间，例如 2s
 -ping-privileged 使用特权 raw ICMP ping
 -ip-selection    解析 IP 的 ping 目标选择策略: all 或 first
--output          输出目录或 .xlsx 文件路径
--output-format   输出格式，目前支持 excel
+-output          输出目录或输出文件路径，按格式支持 .html / .xlsx
+-output-format   输出格式，目前支持 html 或 excel
 ```
 
-`ping.privileged` 默认是 `false`，使用非特权 ping。若运行环境要求 raw ICMP 权限，可以在配置文件中改为 `true`，并用管理员权限运行；如果解析后的 IP 全部 ping 失败，日志和 Excel 的 `Ping错误` 列会显示失败原因，平均延迟不会再被误解为有效的 0 延迟。
+`output.format` 可以设置为 `html` 或 `excel`。`html` 报告会生成离线可打开的单文件，包含 DNS 排名卡片、延迟条形对比、成功率、重试次数、解析结果、实际 Ping 目标和错误明细；`excel` 会生成原有表格文件，便于后续二次处理。
+
+```bash
+go run . -c config.yaml -output-format html -output results
+```
+
+`ping.privileged` 默认是 `false`，使用非特权 ping。若运行环境要求 raw ICMP 权限，可以在配置文件中改为 `true`，并用管理员权限运行；如果解析后的 IP 全部 ping 失败，日志和输出报告的错误列会显示失败原因，平均延迟不会再被误解为有效的 0 延迟。
 
 `ping.ip_selection` 默认是 `all`，会 ping DNS 返回的所有 A 记录并计算平均延迟。设置为 `first` 时，只 ping DNS 响应里的第一个 A 记录，用于近似模拟常见客户端优先尝试首个候选地址的行为:
 
