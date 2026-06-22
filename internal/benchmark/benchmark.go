@@ -106,6 +106,8 @@ func runResolvePingWithRunnersAndGeoIP(ctx context.Context, cfg config.Config, l
 		Interval:    cfg.Ping.Interval,
 		Timeout:     cfg.Ping.Timeout,
 		Privileged:  cfg.Ping.Privileged,
+		Method:      cfg.Ping.Method,
+		TCPPort:     cfg.Ping.TCPPort,
 		IPSelection: cfg.Ping.IPSelection,
 		IPFamily:    cfg.Ping.IPFamily,
 	}

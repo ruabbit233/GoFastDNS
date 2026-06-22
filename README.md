@@ -76,6 +76,8 @@ ping:
   interval: 100ms
   timeout: 2s
   privileged: false
+  method: icmp
+  tcp_port: 443
   ip_selection: all
   ip_family: ipv4
 
@@ -107,6 +109,8 @@ domains:
 -ping-interval   ping 间隔，例如 100ms
 -ping-timeout    ping 超时时间，例如 2s
 -ping-privileged 使用特权 raw ICMP ping
+-ping-method     Ping 方法: icmp 或 tcp；tcp 仅支持 resolve-ping
+-tcp-port        TCP ping 端口，仅用于 resolve-ping
 -ip-selection    解析 IP 的 ping 目标选择策略: all 或 first
 -ip-family       Ping IP family: ipv4、ipv6 或 dual
 -rounds          正式 benchmark 轮数
@@ -163,7 +167,13 @@ go run . -c config.yaml -output-format html -output results
 go run . -c config.yaml -output-format json -output results
 ```
 
-`ping.privileged` 默认是 `false`，使用非特权 ping。若运行环境要求 raw ICMP 权限，可以在配置文件中改为 `true`，并用管理员权限运行；如果解析后的 IP 全部 ping 失败，日志和输出报告的错误列会显示失败原因，平均延迟不会再被误解为有效的 0 延迟。
+`ping.method` 默认是 `icmp`。在 `resolve-ping` 模式下可以设置为 `tcp`，程序会对 DNS 解析出的业务 IP 执行 TCP connect 测量，端口由 `ping.tcp_port` 或 `-tcp-port` 指定，默认 `443`。tcping 不支持 `dns-ping` 模式。
+
+```bash
+go run . -mode resolve-ping -dns udp://8.8.8.8 -domains example.com -ping-method tcp -tcp-port 443
+```
+
+`ping.privileged` 默认是 `false`，只影响 ICMP ping。若运行环境要求 raw ICMP 权限，可以在配置文件中改为 `true`，并用管理员权限运行；如果解析后的 IP 全部 ping 失败，日志和输出报告的错误列会显示失败原因，平均延迟不会再被误解为有效的 0 延迟。
 
 `ping.ip_selection` 默认是 `all`，会 ping DNS 返回的所有匹配 IP 并计算平均延迟。设置为 `first` 时，只 ping DNS 响应里的第一个匹配 IP，用于近似模拟常见客户端优先尝试首个候选地址的行为:
 

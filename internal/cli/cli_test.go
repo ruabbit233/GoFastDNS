@@ -20,6 +20,8 @@ func TestApplyFlagOverrides(t *testing.T) {
 		pingIntv:    200 * time.Millisecond,
 		pingTime:    3 * time.Second,
 		pingPriv:    true,
+		pingMethod:  "tcp",
+		tcpPort:     8443,
 		ipSelect:    "first",
 		ipFamily:    "dual",
 		rounds:      3,
@@ -36,6 +38,8 @@ func TestApplyFlagOverrides(t *testing.T) {
 		geoASNDB:    "./asn.bin",
 		rawFlags: []string{
 			"-ping-privileged",
+			"-ping-method=tcp",
+			"-tcp-port=8443",
 			"-rounds=3",
 			"-warmup=1",
 			"-score-dns-weight=0.2",
@@ -81,6 +85,12 @@ func TestApplyFlagOverrides(t *testing.T) {
 	}
 	if !cfg.Ping.Privileged {
 		t.Fatal("expected privileged ping to be enabled")
+	}
+	if cfg.Ping.Method != "tcp" {
+		t.Fatalf("expected ping method=tcp, got %q", cfg.Ping.Method)
+	}
+	if cfg.Ping.TCPPort != 8443 {
+		t.Fatalf("expected tcp port=8443, got %d", cfg.Ping.TCPPort)
 	}
 	if cfg.Ping.IPSelection != "first" {
 		t.Fatalf("expected ip selection=first, got %q", cfg.Ping.IPSelection)

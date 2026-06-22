@@ -29,6 +29,8 @@ type flagOptions struct {
 	pingIntv    time.Duration
 	pingTime    time.Duration
 	pingPriv    bool
+	pingMethod  string
+	tcpPort     int
 	ipSelect    string
 	ipFamily    string
 	rounds      int
@@ -119,6 +121,8 @@ func parseFlags(args []string, output io.Writer) (flagOptions, error) {
 	fs.DurationVar(&opts.pingIntv, "ping-interval", 0, "ping 间隔，如 100ms")
 	fs.DurationVar(&opts.pingTime, "ping-timeout", 0, "ping 超时时间，如 2s")
 	fs.BoolVar(&opts.pingPriv, "ping-privileged", false, "使用特权 raw ICMP ping")
+	fs.StringVar(&opts.pingMethod, "ping-method", "", "Ping 方法: icmp 或 tcp；tcp 仅支持 resolve-ping")
+	fs.IntVar(&opts.tcpPort, "tcp-port", 0, "TCP ping 端口，仅用于 resolve-ping")
 	fs.StringVar(&opts.ipSelect, "ip-selection", "", "解析 IP 的 ping 目标选择策略: all 或 first")
 	fs.StringVar(&opts.ipFamily, "ip-family", "", "Ping IP family: ipv4、ipv6 或 dual")
 	fs.IntVar(&opts.rounds, "rounds", -1, "正式 benchmark 轮数")
@@ -171,6 +175,12 @@ func applyFlagOverrides(cfg *config.Config, opts flagOptions) {
 	}
 	if flagWasSet(opts.rawFlags, "ping-privileged") {
 		cfg.Ping.Privileged = opts.pingPriv
+	}
+	if opts.pingMethod != "" {
+		cfg.Ping.Method = opts.pingMethod
+	}
+	if flagWasSet(opts.rawFlags, "tcp-port") {
+		cfg.Ping.TCPPort = opts.tcpPort
 	}
 	if opts.ipSelect != "" {
 		cfg.Ping.IPSelection = opts.ipSelect

@@ -21,10 +21,12 @@ geoip:
   database_path: ./IP2LOCATION-LITE-DB11.BIN
   asn_database_path: ./IP2LOCATION-LITE-ASN.BIN
 ping:
-  count: 3
+  count: 5
   interval: 100ms
-  timeout: 2s
+  timeout: 1s
   privileged: false # 默认使用非特权 ping，避免普通用户缺少 raw ICMP 权限
+  method: tcp # 可选: icmp / tcp；tcping 仅支持 resolve-ping
+  tcp_port: 443 # tcping 连接端口，仅用于 resolve-ping
   ip_selection: first # 可选: all / first；first 用于模拟只使用首个解析 IP
   ip_family: ipv4 # 可选: ipv4 / ipv6 / dual；默认只 ping IPv4
 output:

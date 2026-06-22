@@ -41,6 +41,8 @@ type PingConfig struct {
 	Interval    time.Duration `yaml:"interval"`
 	Timeout     time.Duration `yaml:"timeout"`
 	Privileged  bool          `yaml:"privileged"`
+	Method      string        `yaml:"method"`
+	TCPPort     int           `yaml:"tcp_port"`
 	IPSelection string        `yaml:"ip_selection"`
 	IPFamily    string        `yaml:"ip_family"`
 }
@@ -87,6 +89,8 @@ func DefaultConfig() Config {
 			Count:       3,
 			Interval:    100 * time.Millisecond,
 			Timeout:     2 * time.Second,
+			Method:      "icmp",
+			TCPPort:     443,
 			IPSelection: "all",
 			IPFamily:    "ipv4",
 		},
@@ -164,6 +168,13 @@ func ApplyDefaults(config *Config) {
 	}
 	if config.Ping.Timeout <= 0 {
 		config.Ping.Timeout = defaults.Ping.Timeout
+	}
+	if config.Ping.Method == "" {
+		config.Ping.Method = defaults.Ping.Method
+	}
+	config.Ping.Method = strings.ToLower(config.Ping.Method)
+	if config.Ping.TCPPort <= 0 {
+		config.Ping.TCPPort = defaults.Ping.TCPPort
 	}
 	if config.Ping.IPSelection == "" {
 		config.Ping.IPSelection = defaults.Ping.IPSelection
@@ -245,6 +256,17 @@ func Validate(config Config) error {
 	}
 	if config.Ping.Timeout <= 0 {
 		return errors.New("ping.timeout must be greater than 0")
+	}
+	switch config.Ping.Method {
+	case "icmp", "tcp":
+	default:
+		return fmt.Errorf("unsupported ping.method %q", config.Ping.Method)
+	}
+	if config.Mode == ModeDNSPing && config.Ping.Method == "tcp" {
+		return errors.New("ping.method tcp is only supported for resolve-ping mode")
+	}
+	if config.Ping.TCPPort <= 0 || config.Ping.TCPPort > 65535 {
+		return errors.New("ping.tcp_port must be between 1 and 65535")
 	}
 	switch config.Ping.IPSelection {
 	case "all", "first":

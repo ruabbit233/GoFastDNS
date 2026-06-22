@@ -18,6 +18,11 @@ const (
 	defaultTimeout  = time.Second * 2
 )
 
+var tcpDialContext = func(ctx context.Context, address string, timeout time.Duration) (net.Conn, error) {
+	dialer := net.Dialer{Timeout: timeout}
+	return dialer.DialContext(ctx, "tcp", address)
+}
+
 func PingIP(ip string) PingResult {
 	return PingIPWithOptions(ip, Options{})
 }
@@ -29,6 +34,15 @@ func PingIPWithOptions(ip string, options Options) PingResult {
 func PingIPWithOptionsContext(ctx context.Context, ip string, options Options) PingResult {
 	options = applyDefaults(options)
 
+	switch options.Method {
+	case "tcp":
+		return pingTCP(ctx, ip, options)
+	default:
+		return pingICMP(ctx, ip, options)
+	}
+}
+
+func pingICMP(ctx context.Context, ip string, options Options) PingResult {
 	pinger, err := probing.NewPinger(ip)
 	if err != nil {
 		return PingResult{
@@ -59,6 +73,57 @@ func PingIPWithOptionsContext(ctx context.Context, ip string, options Options) P
 	}
 	if err := result.FailureError(); err != nil {
 		result.Error = err
+	}
+	return result
+}
+
+func pingTCP(ctx context.Context, ip string, options Options) PingResult {
+	address := net.JoinHostPort(ip, fmt.Sprintf("%d", options.TCPPort))
+	result := PingResult{
+		IP: ip,
+	}
+	var totalRTT time.Duration
+	var lastErr error
+
+	for i := 0; i < options.Count; i++ {
+		if err := ctx.Err(); err != nil {
+			result.Error = err
+			break
+		}
+
+		start := time.Now()
+		result.PacketsSent++
+		conn, err := tcpDialContext(ctx, address, options.Timeout)
+		if err != nil {
+			lastErr = err
+		} else {
+			totalRTT += time.Since(start)
+			result.PacketsRecv++
+			_ = conn.Close()
+		}
+
+		if i < options.Count-1 {
+			timer := time.NewTimer(options.Interval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				result.Error = ctx.Err()
+				i = options.Count
+			case <-timer.C:
+			}
+		}
+	}
+
+	failed := result.PacketsSent - result.PacketsRecv
+	if result.PacketsSent > 0 {
+		result.PacketLoss = float64(failed) / float64(result.PacketsSent) * 100
+	}
+	if result.PacketsRecv > 0 {
+		result.RTT = totalRTT / time.Duration(result.PacketsRecv)
+		return result
+	}
+	if result.Error == nil {
+		result.Error = fmt.Errorf("tcp ping %s failed: %w", address, lastErr)
 	}
 	return result
 }
@@ -163,6 +228,13 @@ func applyDefaults(options Options) Options {
 	}
 	if options.Timeout <= 0 {
 		options.Timeout = defaultTimeout
+	}
+	if options.Method == "" {
+		options.Method = "icmp"
+	}
+	options.Method = strings.ToLower(options.Method)
+	if options.TCPPort <= 0 {
+		options.TCPPort = 443
 	}
 	if options.IPSelection == "" {
 		options.IPSelection = "all"

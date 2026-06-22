@@ -10,6 +10,8 @@ type Options struct {
 	Interval    time.Duration
 	Timeout     time.Duration
 	Privileged  bool
+	Method      string
+	TCPPort     int
 	IPSelection string
 	IPFamily    string
 }

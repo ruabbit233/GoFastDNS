@@ -30,6 +30,12 @@ func TestApplyDefaults(t *testing.T) {
 	if cfg.Ping.Timeout != 2*time.Second {
 		t.Fatalf("expected ping timeout=2s, got %s", cfg.Ping.Timeout)
 	}
+	if cfg.Ping.Method != "icmp" {
+		t.Fatalf("expected ping method=icmp, got %q", cfg.Ping.Method)
+	}
+	if cfg.Ping.TCPPort != 443 {
+		t.Fatalf("expected tcp port=443, got %d", cfg.Ping.TCPPort)
+	}
 	if cfg.Ping.IPSelection != "all" {
 		t.Fatalf("expected ip selection=all, got %q", cfg.Ping.IPSelection)
 	}
@@ -64,6 +70,45 @@ func TestValidateRejectsUnknownIPSelection(t *testing.T) {
 
 	if err := Validate(cfg); err == nil {
 		t.Fatal("expected invalid ip selection to be rejected")
+	}
+}
+
+func TestValidatePingMethodAndTCPPort(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DNSServers = []string{"udp://8.8.8.8"}
+	cfg.Domains = []string{"example.com"}
+	cfg.Ping.Method = "tcp"
+	cfg.Ping.TCPPort = 443
+
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("expected tcp ping to be valid for resolve-ping: %v", err)
+	}
+
+	cfg.Ping.Method = "udp"
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected unsupported ping method to be rejected")
+	}
+
+	cfg.Ping.Method = "tcp"
+	cfg.Ping.TCPPort = 0
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected invalid tcp port to be rejected")
+	}
+
+	cfg.Ping.TCPPort = 65536
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected out-of-range tcp port to be rejected")
+	}
+}
+
+func TestValidateRejectsTCPMethodForDNSPing(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Mode = ModeDNSPing
+	cfg.DNSServers = []string{"udp://8.8.8.8"}
+	cfg.Ping.Method = "tcp"
+
+	if err := Validate(cfg); err == nil {
+		t.Fatal("expected tcp ping to be rejected for dns-ping")
 	}
 }
 
