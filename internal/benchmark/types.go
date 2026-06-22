@@ -6,11 +6,12 @@ import (
 )
 
 type DomainResult struct {
-	Domain       string
-	ResponseTime time.Duration
-	Error        error
-	RetryCount   int
-	DnsPingResults  ping.DNSPingResult // 新增字段
+	Domain         string
+	Answers        []string
+	ResponseTime   time.Duration
+	Error          error
+	RetryCount     int
+	DnsPingResults ping.DNSPingResult // 新增字段
 }
 
 type BenchmarkResult struct {
@@ -19,4 +20,14 @@ type BenchmarkResult struct {
 	DomainResults   []DomainResult
 	SuccessRate     float64
 	TotalRetries    int
+	AvgPingRTT      time.Duration
+}
+
+type DNSPingBenchmarkResult struct {
+	Server      string
+	Target      string
+	RTT         time.Duration
+	PacketLoss  float64
+	PacketsSent int
+	Error       error
 }

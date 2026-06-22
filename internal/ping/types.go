@@ -2,6 +2,14 @@ package ping
 
 import "time"
 
+type Options struct {
+	Count       int
+	Interval    time.Duration
+	Timeout     time.Duration
+	Privileged  bool
+	IPSelection string
+}
+
 type PingResult struct {
 	IP          string
 	RTT         time.Duration

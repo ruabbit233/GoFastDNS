@@ -1,3 +1,4 @@
 .idea
 *.xlsx
 *.exe
+.tmp-gocache/

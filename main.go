@@ -1,26 +1,10 @@
 package main
 
 import (
-	"GoFastDNS/internal/benchmark"
-	"GoFastDNS/internal/config"
-	"fmt"
-	"log"
+	"GoFastDNS/internal/cli"
+	"os"
 )
 
 func main() {
-	// 初始化配置
-	loadConfig := config.LoadConfig("config.yaml")
-
-	// 运行基准测试
-	results := benchmark.RunBenchmark(loadConfig.DNSServers, loadConfig.Domains, loadConfig.Attempts, loadConfig.Timeout)
-
-	// 保存结果到Excel文件
-	filename := benchmark.SaveResultsToExcel(loadConfig.DNSServers, results)
-	if filename != "" {
-		log.Printf("结果已保存到 %s\n", filename)
-	}
-
-	// 等待任意输入
-	log.Print("按 任意 键退出...")
-	_, _ = fmt.Scanln()
+	os.Exit(cli.Run(os.Args[1:]))
 }
